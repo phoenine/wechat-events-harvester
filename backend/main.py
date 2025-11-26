@@ -1,15 +1,19 @@
+import threading
+import asyncio
+import uvicorn
+
 from dotenv import load_dotenv
 load_dotenv()
-import uvicorn
+
 from core.config import cfg
 from core.print import print_warning
-import threading
+
 
 if __name__ == "__main__":
     if cfg.args.init == "True":
         import init_sys as init
 
-        init.init()
+        asyncio.run(init.init())
     if cfg.args.job == "True" and cfg.get("server.enable_job", False):
         from jobs import start_all_task
 
@@ -22,10 +26,10 @@ if __name__ == "__main__":
     uvicorn.run(
         "web:app",
         host="0.0.0.0",
-        port=int(cfg.get("port", 8001)),
+        port=int(cfg.get("port", 38001)),
         reload=AutoReload,
         reload_dirs=["core", "web_ui"],
-        reload_excludes=["static", "web_ui", "data"],
+        reload_excludes=["web_ui", "data"],
         workers=thread,
     )
     pass

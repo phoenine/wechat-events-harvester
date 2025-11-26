@@ -1,18 +1,14 @@
-from .base import Base, Column, String, Integer, DateTime, Text
+from typing import Optional
+from pydantic import BaseModel
 
-
-class Tags(Base):
-    __tablename__ = "tags"
-
-    id = Column(String(255), primary_key=True)
-    name = Column(String(255))
-    # 标签封面图片URL
-    cover = Column(String(255))
-    intro = Column(String(255))
-    # 标签状态（如：0-禁用，1-启用）
-    status = Column(Integer)
-    mps_id = Column(Text, nullable=False)
-    sync_time = Column(Integer)
-    update_time = Column(Integer)
-    created_at = Column(DateTime)
-    updated_at = Column(DateTime)
+class Tags(BaseModel):
+    id: str
+    name: Optional[str] = None
+    cover: Optional[str] = None
+    intro: Optional[str] = None
+    status: Optional[int] = None
+    mps_id: Optional[str] = None
+    sync_time: Optional[int] = None
+    update_time: Optional[int] = None
+    created_at: Optional[str] = None   # ISO datetime string
+    updated_at: Optional[str] = None   # ISO datetime string

@@ -1,6 +1,5 @@
-from .md2doc import MarkdownToWordConverter
-from core.models import Article
-from core.db import DB
+from tools.mdtools.md2doc import MarkdownToWordConverter
+from core.repositories import article_repo
 from datetime import datetime
 import json
 import csv
@@ -133,7 +132,6 @@ def process_single_article(
 
 
 def process_articles(
-    session,
     mp_id=None,
     doc_id=None,
     page_size=10,
@@ -163,22 +161,33 @@ def process_articles(
         if page_count != 0 and i >= page_count:
             break
 
-        query = (
-            session.query(Article)
-            .filter(Article.content != None)
-            .where(Article.status == 1)
-        )
+        # 构建Supabase过滤器
+        filters = {"content": {"neq": None}, "status": 1}
+
         if mp_id:
-            query = query.where(Article.mp_id.in_(mp_id.split(",")))
+            mp_ids = mp_id.split(",")
+            if len(mp_ids) == 1:
+                filters["mp_id"] = mp_ids[0]
+            else:
+                filters["mp_id"] = {"in": mp_ids}
+
         if doc_id:
-            query = query.where(Article.id.in_(doc_id))
+            if len(doc_id) == 1:
+                filters["id"] = doc_id[0]
+            else:
+                filters["id"] = {"in": doc_id}
             is_break = True
 
-        query = query.order_by(Article.publish_time.desc(), Article.id.desc())
-        if is_break == False:
-            query = query.offset(i * page_size).limit(page_size)
+        # 使用Supabase获取文章
+        offset = i * page_size if not is_break else 0
+        arts = article_repo.sync_get_articles(
+            filters=filters,
+            limit=page_size if not is_break else None,
+            offset=offset,
+            order_by="publish_time.desc,id.desc",
+        )
+
         i = i + 1
-        arts = query.all()
 
         if arts is None or len(arts) == 0:
             break
@@ -219,7 +228,6 @@ def export_md_to_doc(
     zip_filename=None,
     zip_file=True,
 ):
-    session = DB.get_session()
     if mp_id == None:
         raise ValueError("公众号ID不能为空")
     docx_path = f"./data/docs/{mp_id}/"
@@ -237,7 +245,6 @@ def export_md_to_doc(
 
     # 调用独立的文章处理函数
     record_count = process_articles(
-        session=session,
         mp_id=mp_id,
         doc_id=doc_id,
         page_size=page_size,

@@ -1,15 +1,15 @@
 import sys
 import threading
 import asyncio
-from .playwright_driver import PlaywrightController
-from .success import Success
+from driver.playwright_driver import PlaywrightController
+from driver.success import Success
 import time
 import os
 from driver.success import getStatus
 from driver.store import Store
 import re
 from threading import Timer, Lock
-from .cookies import expire
+from driver.cookies import expire
 from core.print import print_error, print_warning, print_info, print_success
 
 
@@ -24,7 +24,8 @@ class Wx:
     isLOCK = False
     WX_LOGIN = "https://mp.weixin.qq.com/"
     WX_HOME = "https://mp.weixin.qq.com/cgi-bin/home"
-    wx_login_url = "static/wx_qrcode.png"
+    wx_login_url = None
+    current_session_id = None
     lock_file_path = "data/.lock"
     CallBack = None
     Notice = None
@@ -42,9 +43,7 @@ class Wx:
         pass
 
     def GetHasCode(self):
-        if os.path.exists(self.wx_login_url):
-            return True
-        return False
+        return bool(self.wx_login_url)
 
     def extract_token_from_requests(self):
         """从页面中提取token"""
@@ -82,7 +81,7 @@ class Wx:
         if self.check_lock():
             print_warning("微信公众平台登录脚本正在运行，请勿重复运行")
             return {
-                "code": f"{self.wx_login_url}?t={(time.time())}",
+                "code": self.wx_login_url,
                 "msg": "微信公众平台登录脚本正在运行，请勿重复运行！",
             }
 
@@ -101,7 +100,7 @@ class Wx:
 
     def QRcode(self):
         return {
-            "code": f"/{self.wx_login_url}?t={(time.time())}",
+            "code": self.wx_login_url,
             "is_exists": self.GetHasCode(),
         }
 
@@ -151,7 +150,7 @@ class Wx:
                 return {
                     "need_login": True,
                     "message": "未登录，请扫码登录后重试。",
-                    "code": f"/{self.wx_login_url}?t={(time.time())}",
+                    "code": self.wx_login_url,
                     "is_exists": self.GetHasCode(),
                 }
 
@@ -200,12 +199,9 @@ class Wx:
     def isLock(self):
         """二维码是否已生成且有效（兼容旧名）"""
         try:
-            if self.isLOCK and os.path.exists(self.wx_login_url):
-                size = os.path.getsize(self.wx_login_url)
-                return size > 364
-        except Exception as e:
-            print(f"二维码图片获取失败: {str(e)}")
-        return False
+            return self.isLOCK and bool(self.wx_login_url)
+        except Exception:
+            return False
 
     def wxLogin(self, CallBack=None, NeedExit=False):
         """
@@ -286,12 +282,19 @@ class Wx:
             if qrcode is None:
                 raise Exception("未找到登录二维码元素")
 
-            # 截图二维码
-            qrcode.screenshot(path=self.wx_login_url)
-
-            print("二维码已保存为 wx_qrcode.png，请扫码登录...")
-            self.HasCode = True
-            if os.path.getsize(self.wx_login_url) <= 364:
+            img_bytes = qrcode.screenshot()
+            from core.supabase.storage import SupabaseStorage
+            sb = SupabaseStorage()
+            if sb.valid():
+                up = sb.upload_qr(img_bytes)
+                self.wx_login_url = up["url"]
+                self.HasCode = True
+            try:
+                from core.supabase.database import db_manager
+                db_manager.update_session_sync(self.current_session_id, status="waiting", qr_signed_url=self.wx_login_url, expires_minutes=2)
+            except Exception:
+                pass
+            if not img_bytes or len(img_bytes) <= 364:
                 raise Exception("二维码图片获取失败，请重新扫码")
             # 等待登录成功（检测二维码图片加载完成）
             print("等待扫码登录...")
@@ -309,6 +312,11 @@ class Wx:
             setStatus(True)
             self.CallBack = CallBack
             self.Call_Success()
+            try:
+                from core.supabase.database import db_manager
+                db_manager.update_session_sync(self.current_session_id, status="success")
+            except Exception:
+                pass
         except Exception as e:
             print(f"\n错误发生: {str(e)}")
             self.SESSION = None
@@ -448,12 +456,7 @@ class Wx:
         return rel
 
     def Clean(self):
-        try:
-            os.remove(self.wx_login_url)
-        except:
-            pass
-        finally:
-            pass
+        return
 
     def expire_all_cookies(self):
         """设置所有cookie为过期状态"""

@@ -90,18 +90,12 @@ deploy_services() {
 init_database() {
     echo "🗄️  Initializing database..."
 
-    # Check if we can connect to the database
+    # Run initialization using Supabase
     docker-compose exec -T backend python -c "
-from core.db import DB
 from core.config import cfg
 import sys
 
 try:
-    # Test connection
-    session = DB.get_session()
-    session.execute('SELECT 1')
-    print('✅ Database connection successful')
-
     # Run initialization
     from init_sys import init
     init()

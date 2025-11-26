@@ -1,34 +1,29 @@
 from fastapi import APIRouter, Depends, HTTPException, Body, Path, Query
-from sqlalchemy.orm import Session
-from typing import List, Optional
-from pydantic import BaseModel
-from core.models.config_management import ConfigManagement
-from core.db import DB
-from core.auth import get_current_user
-from .base import success_response, error_response
-from core.config import cfg
+from core.repositories import config_repo
+from core.supabase.auth import get_current_user
+from schemas import success_response, error_response, ConfigManagementCreate
+
 
 router = APIRouter(prefix="/configs", tags=["配置管理"])
 
-
 @router.get("", summary="获取配置项列表")
-def list_configs(
+async def list_configs(
     limit: int = Query(10, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_user),
 ):
-    # db=DB.get_session()
     """获取配置项列表"""
     try:
-        # total = db.query(ConfigManagement).count()
-        # configs = db.query(ConfigManagement).offset(offset).limit(limit).all()
-        from core.yaml_db import YamlDB
-
-        configs = YamlDB.store_config_to_list(cfg._config)
+        # 从数据库获取配置项
+        configs = await config_repo.get_configs()
         total = len(configs)
+
+        # 分页处理
+        paginated_configs = configs[offset : offset + limit]
+
         return success_response(
             data={
-                "list": configs,
+                "list": paginated_configs,
                 "page": {"limit": limit, "offset": offset},
                 "total": total,
             }
@@ -38,15 +33,13 @@ def list_configs(
 
 
 @router.get("/{config_key}", summary="获取单个配置项详情")
-def get_config(config_key: str, current_user: dict = Depends(get_current_user)):
-    db = DB.get_session()
+async def get_config(
+    config_key: str,
+    _current_user: dict = Depends(get_current_user),
+):
     """获取单个配置项详情"""
     try:
-        config = (
-            db.query(ConfigManagement)
-            .filter(ConfigManagement.config_key == config_key)
-            .first()
-        )
+        config = await config_repo.get_config_by_key(config_key)
         if not config:
             raise HTTPException(status_code=404, detail="Config not found")
         return success_response(data=config)
@@ -54,91 +47,70 @@ def get_config(config_key: str, current_user: dict = Depends(get_current_user)):
         return error_response(code=500, message=str(e))
 
 
-class ConfigManagementCreate(BaseModel):
-    config_key: str
-    config_value: str
-    description: Optional[str] = None
-
-
 @router.post("", summary="创建配置项")
-def create_config(
+async def create_config(
     config_data: ConfigManagementCreate = Body(...),
-    current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_user),
 ):
-    db = DB.get_session()
     """创建配置项"""
     try:
-        # 检查config_key是否已存在
-        existing_config = (
-            db.query(ConfigManagement)
-            .filter(ConfigManagement.config_key == config_data.config_key)
-            .first()
-        )
+        existing_config = await config_repo.get_config_by_key(config_data.config_key)
         if existing_config:
             raise HTTPException(
                 status_code=400, detail="Config with this key already exists"
             )
 
-        db_config = ConfigManagement(
-            config_key=config_data.config_key,
-            config_value=config_data.config_value,
-            description=config_data.description,
+        config_data_dict = {
+            "config_key": config_data.config_key,
+            "config_value": config_data.config_value,
+            "description": config_data.description,
+        }
+
+        new_config = await config_repo.set_config(
+            config_data.config_key,
+            config_data.config_value,
+            config_data.description or "",
         )
-        db.add(db_config)
-        db.commit()
-        db.refresh(db_config)
-        return success_response(data=db_config)
+        return success_response(data=new_config)
     except Exception as e:
-        db.rollback()
         return error_response(code=500, message=str(e))
 
 
 @router.put("/{config_key}", summary="更新配置项")
-def update_config(
+async def update_config(
     config_key: str = Path(..., min_length=1),
     config_data: ConfigManagementCreate = Body(...),
-    current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_user),
 ):
-    db = DB.get_session()
     """更新配置项"""
     try:
-        db_config = (
-            db.query(ConfigManagement)
-            .filter(ConfigManagement.config_key == config_key)
-            .first()
-        )
-        if not db_config:
+        existing_config = await config_repo.get_config_by_key(config_key)
+        if not existing_config:
             raise HTTPException(status_code=404, detail="Config not found")
 
-        if config_data.config_value is not None:
-            db_config.config_value = config_data.config_value
-        if config_data.description is not None:
-            db_config.description = config_data.description
-
-        db.commit()
-        db.refresh(db_config)
-        return success_response(data=db_config)
+        # 更新配置项
+        updated_config = await config_repo.set_config(
+            config_key, config_data.config_value, config_data.description or ""
+        )
+        return success_response(data=updated_config)
     except Exception as e:
-        db.rollback()
         return error_response(code=500, message=str(e))
 
 
 @router.delete("/{config_key}", summary="删除配置项")
-def delete_config(config_key: str, current_user: dict = Depends(get_current_user)):
-    db = DB.get_session()
+async def delete_config(
+    config_key: str,
+    _current_user: dict = Depends(get_current_user),
+):
     """删除配置项"""
     try:
-        db_config = (
-            db.query(ConfigManagement)
-            .filter(ConfigManagement.config_key == config_key)
-            .first()
-        )
-        if not db_config:
+        # 检查配置项是否存在
+        existing_config = await config_repo.get_config_by_key(config_key)
+        if not existing_config:
             raise HTTPException(status_code=404, detail="Config not found")
 
-        db.delete(db_config)
-        db.commit()
+        # 删除配置项
+        await config_repo.delete_config(config_key)
         return success_response(message="Config deleted successfully")
     except Exception as e:
-        db.rollback()
         return error_response(code=500, message=str(e))

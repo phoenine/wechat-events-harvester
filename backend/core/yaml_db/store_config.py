@@ -1,6 +1,8 @@
 import yaml
-from core.db import DB as db
-from core.models.config_management import ConfigManagement
+from core.supabase.database import (
+    sync_get_config_managements,
+    sync_set_config_management,
+)
 import logging
 from typing import Dict, Any
 
@@ -61,18 +63,12 @@ class ConfigManager:
             # 清理description
             description = description.strip()
 
-            # 转义特殊字符
-            description = description.replace("'", "''").replace('"', '""')
-
             # 限制长度
             description = description[:255]
 
-            db.get_session().merge(
-                ConfigManagement(
-                    config_key=key,
-                    config_value=str(value) if value is not None else "",
-                    description=description,
-                )
+            # 使用Supabase存储配置项
+            sync_set_config_management(
+                key, str(value) if value is not None else "", description
             )
             self.logger.debug(f"成功存储配置项: {key}")
         except Exception as e:
@@ -83,7 +79,6 @@ class ConfigManager:
         """将配置文件中的所有配置项存储到数据库"""
         self.logger.info("开始存储配置到数据库...")
         config = self._load_config()
-        session = db.get_session()
         try:
             for key, value in config.items():
                 if isinstance(value, dict):
@@ -96,18 +91,16 @@ class ConfigManager:
                 else:
                     self._store_single_config(key, value, "系统配置项")
 
-            session.commit()
             self.logger.info("配置已成功存储到ConfigManagement表")
             return True
         except Exception as e:
-            session.rollback()
             self.logger.error(f"存储配置失败: {str(e)}")
             return False
 
     def store_config_to_list(self, config=None) -> list:
         """
-        将配置文件转换为ConfigManagement对象列表
-        :return: 包含所有配置项的ConfigManagement对象列表
+        将配置文件转换为配置字典列表
+        :return: 包含所有配置项的字典列表
         """
         self.logger.info("开始转换配置到列表...")
         if config is None:
@@ -130,21 +123,21 @@ class ConfigManager:
                             sub_value = "***"
                             pass
                         config_list.append(
-                            ConfigManagement(
-                                config_key=config_key,
-                                config_value=(
+                            {
+                                "config_key": config_key,
+                                "config_value": (
                                     str(sub_value) if sub_value is not None else ""
                                 ),
-                                description=f"{key}配置的子项",
-                            )
+                                "description": f"{key}配置的子项",
+                            }
                         )
                 else:
                     config_list.append(
-                        ConfigManagement(
-                            config_key=key,
-                            config_value=str(value) if value is not None else "",
-                            description="系统配置项",
-                        )
+                        {
+                            "config_key": key,
+                            "config_value": str(value) if value is not None else "",
+                            "description": "系统配置项",
+                        }
                     )
 
             self.logger.info("配置已成功转换为列表")
@@ -193,8 +186,10 @@ class ConfigManager:
 
         try:
             # 从数据库获取所有配置项
-            config_items = ConfigManagement.query.all()
-            flat_config = {item.config_key: item.config_value for item in config_items}
+            config_items = sync_get_config_managements()
+            flat_config = {
+                item["config_key"]: item["config_value"] for item in config_items
+            }
 
             # 转换为嵌套结构
             nested_config = self._convert_to_nested_dict(flat_config)

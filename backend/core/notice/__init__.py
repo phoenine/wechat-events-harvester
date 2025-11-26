@@ -1,7 +1,7 @@
-from .wechat import send_wechat_message
-from .dingtalk import send_dingtalk_message
-from .feishu import send_feishu_message
-from .custom import send_custom_message
+from core.notice.wechat import send_wechat_message
+from core.notice.dingtalk import send_dingtalk_message
+from core.notice.feishu import send_feishu_message
+from core.notice.custom import send_custom_message
 
 
 def notice(webhook_url, title, text, notice_type: str = None):

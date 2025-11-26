@@ -5,8 +5,9 @@ import datetime
 from datetime import datetime, timezone
 
 # from core.config import cfg
-from .cfg import wx_cfg, cfg
-import core.db as db
+from core.wx.cfg import wx_cfg, cfg
+from core.supabase.database import sync_create_article
+
 
 # TODO: base.py中也有类似的实现，需要统一
 def dateformat(timestamp: any):
@@ -141,16 +142,14 @@ def get_list(faker_id: str = None, mp_id: str = None, is_add: bool = False):
 
         update_mps(
             mp_id,
-            Feed(
-                sync_time=int(time.time()),
-                update_time=int(time.time()),
-            ),
+            {
+                "sync_time": int(time.time()),
+                "update_time": int(time.time()),
+            },
         )
     data = get_Articles(faker_id)
     try:
         data = data["publish_page"]["publish_list"]
-        wx_db = db.Db(tag="获取公众号列表")
-        wx_db.init(cfg.get("db"))
         for i in data:
             art = i["publish_info"]
             art = json.loads(art)
@@ -179,7 +178,7 @@ def get_list(faker_id: str = None, mp_id: str = None, is_add: bool = False):
             }
             articles.append(article)
             if is_add:
-                isOk = wx_db.add_article(article)
+                isOk = sync_create_article(article)
                 print(f"添加成功{isOk}")
     except Exception as e:
         print(e, "出错了")
@@ -187,14 +186,10 @@ def get_list(faker_id: str = None, mp_id: str = None, is_add: bool = False):
     return articles
 
 
-from core.models import Feed
-
 # 更新公众号更新状态
-from core.db import DB
-from core.models.feed import Feed
 
 
-def update_mps(mp_id: str, mp: Feed):
+def update_mps(mp_id: str, mp: dict):
     """更新公众号同步状态和时间信息
 
     Args:
@@ -203,6 +198,7 @@ def update_mps(mp_id: str, mp: Feed):
     """
     from datetime import datetime
     import time
+    from core.supabase.database import sync_update_feed
 
     try:
 
@@ -210,8 +206,7 @@ def update_mps(mp_id: str, mp: Feed):
         current_time = int(time.time())
         update_data = {
             "sync_time": current_time,
-            # 'updated_at': dateformat(current_time)
-            "updated_at": datetime.now(),
+            "updated_at": datetime.now().isoformat(),
         }
 
         # 如果有新文章时间，也更新update_time
@@ -220,19 +215,13 @@ def update_mps(mp_id: str, mp: Feed):
         if hasattr(mp, "status") and mp.status is not None:
             update_data["status"] = mp.status
 
-        # 获取数据库会话并执行更新
-        session = DB.get_session()
-        try:
-            feed = session.query(Feed).filter(Feed.id == mp_id).first()
-            if feed:
-                for key, value in update_data.items():
-                    print(f"更新公众号{mp_id}的{key}为{value}")
-                    setattr(feed, key, value)
-                session.commit()
-            else:
-                print(f"未找到ID为{mp_id}的公众号记录")
-        finally:
-            pass
+        # 使用Supabase更新公众号信息
+        result = sync_update_feed(mp_id, update_data)
+        if result:
+            for key, value in update_data.items():
+                print(f"更新公众号{mp_id}的{key}为{value}")
+        else:
+            print(f"未找到ID为{mp_id}的公众号记录")
 
     except Exception as e:
         print(f"更新公众号状态失败: {e}")

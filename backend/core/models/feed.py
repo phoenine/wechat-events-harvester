@@ -1,17 +1,14 @@
-from .base import Base, Column, String, Integer, DateTime
+from typing import Optional
+from pydantic import BaseModel
 
-
-class Feed(Base):
-    from_attributes = True
-    __tablename__ = "feeds"
-
-    id = Column(String(255), primary_key=True)
-    mp_name = Column(String(255))
-    mp_cover = Column(String(255))
-    mp_intro = Column(String(255))
-    status = Column(Integer)
-    sync_time = Column(Integer)
-    update_time = Column(Integer)
-    created_at = Column(DateTime)
-    updated_at = Column(DateTime)
-    faker_id = Column(String(255))
+class Feed(BaseModel):
+    id: str
+    mp_name: Optional[str] = None
+    mp_cover: Optional[str] = None
+    mp_intro: Optional[str] = None
+    status: Optional[int] = None
+    sync_time: Optional[int] = None
+    update_time: Optional[int] = None
+    created_at: Optional[str] = None   # ISO datetime string
+    updated_at: Optional[str] = None   # ISO datetime string
+    faker_id: Optional[str] = None

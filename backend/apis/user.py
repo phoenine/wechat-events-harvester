@@ -1,24 +1,21 @@
+import os
+from typing import List, Dict, Any, cast
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from datetime import datetime
-from core.auth import get_current_user
-from core.db import DB
-from core.models import User as DBUser
-from core.auth import pwd_context
-import os
-from .base import success_response, error_response
+from uuid import uuid4
+from core.supabase.storage import SupabaseStorage
+from schemas import success_response, error_response
+from core.supabase.auth import get_current_user, pwd_context
+from core.repositories import user_repo
+from core.supabase.storage import supabase_storage_avatar
 
 router = APIRouter(prefix="/user", tags=["用户管理"])
 
-
 @router.get("", summary="获取用户信息")
 async def get_user_info(current_user: dict = Depends(get_current_user)):
-    session = DB.get_session()
     try:
-        user = (
-            session.query(DBUser)
-            .filter(DBUser.username == current_user["username"])
-            .first()
-        )
+        user_raw = await user_repo.get_user_by_username(current_user["username"])
+        user: Dict[str, Any] = cast(Dict[str, Any], user_raw)
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -26,12 +23,12 @@ async def get_user_info(current_user: dict = Depends(get_current_user)):
             )
         return success_response(
             {
-                "username": user.username,
-                "nickname": user.nickname if user.nickname else user.username,
-                "avatar": user.avatar if user.avatar else "/static/default-avatar.png",
-                "email": user.email if user.email else "",
-                "role": user.role,
-                "is_active": user.is_active,
+                "username": user["username"],
+                "nickname": user.get("nickname") or user["username"],
+                "avatar": user.get("avatar") or "",
+                "email": user.get("email") or "",
+                "role": user["role"],
+                "is_active": user["is_active"],
             }
         )
     except HTTPException as e:
@@ -45,10 +42,11 @@ async def get_user_info(current_user: dict = Depends(get_current_user)):
 
 @router.get("/list", summary="获取用户列表")
 async def get_user_list(
-    current_user: dict = Depends(get_current_user), page: int = 1, page_size: int = 10
+    current_user: dict = Depends(get_current_user),
+    page: int = 1,
+    page_size: int = 10,
 ):
     """获取所有用户列表（仅管理员可用）"""
-    session = DB.get_session()
     try:
         # 验证当前用户是否为管理员
         if current_user["role"] != "admin":
@@ -58,40 +56,25 @@ async def get_user_list(
             )
 
         # 查询用户总数
-        total = session.query(DBUser).count()
+        total = await user_repo.count_users()
 
         # 分页查询用户列表
-        users = (
-            session.query(DBUser)
-            .order_by(DBUser.created_at.desc())
-            .offset((page - 1) * page_size)
-            .limit(page_size)
-            .all()
-        )
-
+        offset = (page - 1) * page_size
+        users_raw = await user_repo.get_users(limit=page_size, offset=offset)
+        users: List[Dict[str, Any]] = cast(List[Dict[str, Any]], users_raw)
         # 格式化返回数据
         user_list = []
         for user in users:
             user_list.append(
                 {
-                    "username": user.username,
-                    "nickname": user.nickname if user.nickname else user.username,
-                    "avatar": (
-                        user.avatar if user.avatar else "/static/default-avatar.png"
-                    ),
-                    "email": user.email if user.email else "",
-                    "role": user.role,
-                    "is_active": user.is_active,
-                    "created_at": (
-                        user.created_at.strftime("%Y-%m-%d %H:%M:%S")
-                        if user.created_at
-                        else ""
-                    ),
-                    "updated_at": (
-                        user.updated_at.strftime("%Y-%m-%d %H:%M:%S")
-                        if user.updated_at
-                        else ""
-                    ),
+                    "username": user["username"],
+                    "nickname": user.get("nickname") or user["username"],
+                    "avatar": (user.get("avatar") or "/static/default-avatar.png"),
+                    "email": user.get("email") or "",
+                    "role": user["role"],
+                    "is_active": user["is_active"],
+                    "created_at": (user.get("created_at") or ""),
+                    "updated_at": (user.get("updated_at") or ""),
                 }
             )
 
@@ -108,9 +91,11 @@ async def get_user_list(
 
 
 @router.post("", summary="添加用户")
-async def add_user(user_data: dict, current_user: dict = Depends(get_current_user)):
+async def add_user(
+    user_data: dict,
+    current_user: dict = Depends(get_current_user),
+):
     """添加新用户"""
-    session = DB.get_session()
     try:
         # 验证当前用户是否为管理员
         if current_user["role"] != "admin":
@@ -129,11 +114,7 @@ async def add_user(user_data: dict, current_user: dict = Depends(get_current_use
                 )
 
         # 检查用户名是否已存在
-        existing_user = (
-            session.query(DBUser)
-            .filter(DBUser.username == user_data["username"])
-            .first()
-        )
+        existing_user = await user_repo.get_user_by_username(user_data["username"])
         if existing_user:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -141,23 +122,22 @@ async def add_user(user_data: dict, current_user: dict = Depends(get_current_use
             )
 
         # 创建新用户
-        new_user = DBUser(
-            username=user_data["username"],
-            password_hash=pwd_context.hash(user_data["password"]),
-            email=user_data["email"],
-            role=user_data.get("role", "user"),
-            is_active=user_data.get("is_active", True),
-            created_at=datetime.now(),
-            updated_at=datetime.now(),
-        )
-        session.add(new_user)
-        session.commit()
+        user_data = {
+            "username": user_data["username"],
+            "password_hash": pwd_context.hash(user_data["password"]),
+            "email": user_data["email"],
+            "role": user_data.get("role", "user"),
+            "is_active": user_data.get("is_active", True),
+            "created_at": datetime.now().isoformat(),
+            "updated_at": datetime.now().isoformat(),
+        }
+
+        await user_repo.create_user(user_data)
 
         return success_response(message="用户添加成功")
     except HTTPException as e:
         raise e
     except Exception as e:
-        session.rollback()
         raise HTTPException(
             status_code=status.HTTP_406_NOT_ACCEPTABLE, detail=f"用户添加失败: {str(e)}"
         )
@@ -165,14 +145,14 @@ async def add_user(user_data: dict, current_user: dict = Depends(get_current_use
 
 @router.put("", summary="修改用户资料")
 async def update_user_info(
-    update_data: dict, current_user: dict = Depends(get_current_user)
+    update_data: dict,
+    current_user: dict = Depends(get_current_user),
 ):
     """修改用户基本信息(不包括密码)"""
-    session = DB.get_session()
     try:
         # 获取目标用户
         target_username = update_data.get("username", current_user["username"])
-        user = session.query(DBUser).filter(DBUser.username == target_username).first()
+        user = await user_repo.get_user_by_username(target_username)
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -196,21 +176,21 @@ async def update_user_info(
                 detail=error_response(code=40002, message="请使用专门的密码修改接口"),
             )
 
-        # 更新用户信息
+        # 构建更新数据
+        update_user_data = {}
         if "is_active" in update_data:
-            user.is_active = bool(update_data["is_active"])
+            update_user_data["is_active"] = bool(update_data["is_active"])
         if "email" in update_data:
-            user.email = update_data["email"]
+            update_user_data["email"] = update_data["email"]
         if "role" in update_data and current_user["role"] == "admin":
-            user.role = update_data["role"]
+            update_user_data["role"] = update_data["role"]
 
-        user.updated_at = datetime.now()
-        session.commit()
+        # 更新用户信息
+        await user_repo.update_user(target_username, update_user_data)
         return success_response(message="更新成功")
     except HTTPException as e:
         raise e
     except Exception as e:
-        session.rollback()
         raise HTTPException(
             status_code=status.HTTP_406_NOT_ACCEPTABLE, detail=f"更新失败: {str(e)}"
         )
@@ -218,28 +198,22 @@ async def update_user_info(
 
 @router.put("/password", summary="修改密码")
 async def change_password(
-    password_data: dict, current_user: dict = Depends(get_current_user)
+    password_data: dict,
+    current_user: dict = Depends(get_current_user),
 ):
     """修改用户密码"""
-    session = DB.get_session()
     try:
         # 验证请求数据
         if "old_password" not in password_data or "new_password" not in password_data:
-            from .base import error_response
-
             raise HTTPException(
                 status_code=status.HTTP_200_OK,
                 detail=error_response(code=40001, message="需要提供旧密码和新密码"),
             )
 
         # 获取用户
-        user = (
-            session.query(DBUser)
-            .filter(DBUser.username == current_user["username"])
-            .first()
-        )
+        user_raw = await user_repo.get_user_by_username(current_user["username"])
+        user: Dict[str, Any] = cast(Dict[str, Any], user_raw)
         if not user:
-            from .base import error_response
 
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -247,8 +221,7 @@ async def change_password(
             )
 
         # 验证旧密码
-        if not pwd_context.verify(password_data["old_password"], user.password_hash):
-            from .base import error_response
+        if not pwd_context.verify(password_data["old_password"], user["password_hash"]):
 
             raise HTTPException(
                 status_code=status.HTTP_200_OK,
@@ -258,7 +231,6 @@ async def change_password(
         # 验证新密码复杂度
         new_password = password_data["new_password"]
         if len(new_password) < 8:
-            from .base import error_response
 
             raise HTTPException(
                 status_code=status.HTTP_200_OK,
@@ -266,23 +238,18 @@ async def change_password(
             )
 
         # 更新密码
-        user.password_hash = pwd_context.hash(new_password)
-        user.updated_at = datetime.now()
-        session.commit()
-        session.expire(user)
+        update_data = {"password_hash": pwd_context.hash(new_password)}
+        await user_repo.update_user(current_user["username"], update_data)
+
         # 清除用户缓存，确保新密码立即生效
-        from core.auth import clear_user_cache
+        from core.supabase.auth import clear_user_cache
 
         clear_user_cache(current_user["username"])
-
-        from .base import success_response
-
         return success_response(message="密码修改成功")
 
     except HTTPException:
         raise
     except Exception as e:
-        session.rollback()
         raise HTTPException(
             status_code=status.HTTP_406_NOT_ACCEPTABLE, detail=f"密码修改失败: {str(e)}"
         )
@@ -291,82 +258,68 @@ async def change_password(
 @router.post("/avatar", summary="上传用户头像")
 async def upload_avatar(
     file: UploadFile = File(...),
-    # file: typing.Optional[UploadFile] = None,
     current_user: dict = Depends(get_current_user),
 ):
     """处理用户头像上传"""
     try:
-        avatar_path = "files/avatars"
-        # 确保头像目录存在
-        os.makedirs(avatar_path, exist_ok=True)
-        from core.res.avatar import avatar_dir
-
-        # 保存文件
-        file_path = f"{avatar_dir}/{current_user['username']}.jpg"
-        with open(file_path, "wb") as buffer:
-            buffer.write(await file.read())
-
-        # 更新用户头像字段
-        session = DB.get_session()
-        try:
-            user = (
-                session.query(DBUser)
-                .filter(DBUser.username == current_user["username"])
-                .first()
-            )
-            if user:
-                user.avatar = f"/{avatar_path}/{current_user['username']}.jpg"
-                session.commit()
-        except Exception as e:
-            session.rollback()
-            raise HTTPException(
-                status_code=status.HTTP_406_NOT_ACCEPTABLE,
-                detail=f"更新用户头像失败: {str(e)}",
-            )
-
-        from .base import success_response
-
-        return success_response(
-            data={"avatar": f"/{avatar_path}/{current_user['username']}.jpg"}
+        file_bytes = await file.read()
+        _, ext = os.path.splitext(file.filename or "")
+        if not ext:
+            ext = ".jpg"
+        object_path = supabase_storage_avatar.path.format(
+            uuid=str(uuid4()),
+            username=current_user["username"],
+            filename=file.filename or f"{current_user['username']}{ext}",
         )
+
+        avatar_url = await supabase_storage_avatar.upload_bytes(
+            data=file_bytes,
+            path=object_path,
+            content_type=file.content_type or "image/jpeg",
+        )
+        await user_repo.update_user_avatar(current_user["username"], avatar_url)
+        return success_response(data={"avatar": avatar_url})
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_406_NOT_ACCEPTABLE, detail=f"头像上传失败: {str(e)}"
+            status_code=status.HTTP_406_NOT_ACCEPTABLE,
+            detail=f"头像上传失败: {str(e)}",
         )
 
+# TODO: 本地文件上传接口，暂时弃用
+# @router.post("/upload", summary="上传文件")
+# async def upload_file(
+#     file: UploadFile = File(...),
+#     type: str = "tags",
+#     current_user: dict = Depends(get_current_user),
+# ):
+#     """处理用户文件上传"""
+#     try:
+#         # 验证 type 参数的安全性
+#         if not type.isalnum() or type in ["", ".."]:
+#             raise HTTPException(
+#                 status_code=status.HTTP_400_BAD_REQUEST,
+#                 detail=error_response(code=40003, message="无效的文件类型"),
+#             )
+#         file_url_path = f"files/{type}/"
+#         from core.res.avatar import files_dir
 
-@router.post("/upload", summary="上传文件")
-async def upload_file(
-    file: UploadFile = File(...),
-    type: str = "tags",
-    current_user: dict = Depends(get_current_user),
-):
-    """处理用户文件上传"""
-    try:
-        # 验证 type 参数的安全性
-        if not type.isalnum() or type in ["", ".."]:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=error_response(code=40003, message="无效的文件类型"),
-            )
-        file_url_path = f"files/{type}/"
-        from core.res.avatar import files_dir
+#         upload_path = f"{files_dir}/{type}/"
+#         # 确保上传目录存在
+#         os.makedirs(upload_path, exist_ok=True)
 
-        upload_path = f"{files_dir}/{type}/"
-        # 确保上传目录存在
-        os.makedirs(upload_path, exist_ok=True)
+#         # 生成唯一的文件名
+#         file_name = f"{current_user['username']}_{datetime.now().strftime('%Y%m%d%H%M%S')}_{file.filename}"
+#         file_path = f"{upload_path}/{file_name}"
 
-        # 生成唯一的文件名
-        file_name = f"{current_user['username']}_{datetime.now().strftime('%Y%m%d%H%M%S')}_{file.filename}"
-        file_path = f"{upload_path}/{file_name}"
-
-        # 保存文件
-        with open(file_path, "wb") as buffer:
-            buffer.write(await file.read())
-        return success_response(data={"url": f"/{file_url_path}/{file_name}"})
-    except HTTPException as e:
-        raise e
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_406_NOT_ACCEPTABLE, detail=f"文件上传失败: {str(e)}"
-        )
+#         # 保存文件
+#         with open(file_path, "wb") as buffer:
+#             buffer.write(await file.read())
+#         return success_response(data={"url": f"/{file_url_path}/{file_name}"})
+#     except HTTPException as e:
+#         raise e
+#     except Exception as e:
+#         raise HTTPException(
+#             status_code=status.HTTP_406_NOT_ACCEPTABLE, detail=f"文件上传失败: {str(e)}"
+#         )

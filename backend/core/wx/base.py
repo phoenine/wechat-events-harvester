@@ -1,10 +1,7 @@
 import requests
 import json
 import re
-from core.models import Feed
 from driver.wx import DoSuccess
-from core.db import DB
-from core.models.feed import Feed
 from .cfg import cfg, wx_cfg
 from core.print import print_error, print_info
 from core.rss import RSS
@@ -130,7 +127,6 @@ class WxGather:
         if CallBack is not None:
             if data is not None:
                 setStatus(True)
-                from core.models import Article
                 from datetime import datetime
 
                 art = {
@@ -206,10 +202,10 @@ class WxGather:
 
         self.update_mps(
             mp_id,
-            Feed(
-                sync_time=int(time.time()),
-                update_time=int(time.time()),
-            ),
+            {
+                "sync_time": int(time.time()),
+                "update_time": int(time.time()),
+            },
         )
 
     def Item_Over(self, item=None, CallBack=None):
@@ -351,14 +347,15 @@ class WxGather:
         return self.remove_html_region(html_content, common_patterns)
 
     # 更新公众号更新状态
-    def update_mps(self, mp_id: str, mp: Feed):
+    def update_mps(self, mp_id: str, mp: dict):
         """更新公众号同步状态和时间信息
         Args:
             mp_id: 公众号ID
-            mp: Feed对象, 包含公众号信息
+            mp: 包含公众号信息的字典
         """
         from datetime import datetime
         import time
+        from core.supabase.database import sync_update_feed
 
         try:
 
@@ -366,7 +363,7 @@ class WxGather:
             current_time = int(time.time())
             update_data = {
                 "sync_time": current_time,
-                "updated_at": datetime.now(),
+                "updated_at": datetime.now().isoformat(),
             }
 
             # 如果有新文章时间，也更新update_time
@@ -375,19 +372,13 @@ class WxGather:
             if hasattr(mp, "status") and mp.status is not None:
                 update_data["status"] = mp.status
 
-            # 获取数据库会话并执行更新
-            session = DB.get_session()
-            try:
-                feed = session.query(Feed).filter(Feed.id == mp_id).first()
-                if feed:
-                    for key, value in update_data.items():
-                        print(f"更新公众号{mp_id}的{key}为{value}")
-                        setattr(feed, key, value)
-                    session.commit()
-                else:
-                    print_error(f"未找到ID为{mp_id}的公众号记录")
-            finally:
-                pass
+            # 使用Supabase更新公众号信息
+            result = sync_update_feed(mp_id, update_data)
+            if result:
+                for key, value in update_data.items():
+                    print(f"更新公众号{mp_id}的{key}为{value}")
+            else:
+                print_error(f"未找到ID为{mp_id}的公众号记录")
 
         except Exception as e:
             print_error(f"更新公众号状态失败: {e}")

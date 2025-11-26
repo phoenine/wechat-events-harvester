@@ -16,8 +16,9 @@ from threading import Lock, Timer
 from PIL import Image
 import qrcode
 from io import BytesIO
+from core.supabase.storage import SupabaseStorage
 
-from sqlalchemy import true
+
 from .token import get as get_token, set_token
 import logging
 
@@ -42,9 +43,13 @@ class WeChatAPI:
         self.cookies_dict = []
         self.cookies = {}
         self.qr_code_path = "static/wx_qrcode.png"
-        self.wx_login_url = f"{self.qr_code_path}"
+        # 保留已有会话ID与URL，避免重置丢失绑定
+        self.wx_login_url = getattr(self, "wx_login_url", None)
         # 线程安全
         self._lock = Lock()
+        self.qr_uploaded = getattr(self, "qr_uploaded", False)
+        self.qr_latest_url = getattr(self, "qr_latest_url", None)
+        self.current_session_id = None
 
         # 回调函数
         self.login_callback = None
@@ -52,7 +57,6 @@ class WeChatAPI:
 
         # 确保静态目录存在
         self.qr_code_path = os.path.abspath("static/wx_qrcode.png")
-        os.makedirs(os.path.dirname(self.qr_code_path), exist_ok=True)
 
         # 设置请求头
         self.session.headers.update(
@@ -94,15 +98,14 @@ class WeChatAPI:
                 qr_info = self._extract_qr_info(response.text)
 
                 if qr_info:
-                    # 生成二维码图片
                     self._generate_qr_image(qr_info["qr_url"])
 
                     # 启动登录状态检查
                     self._start_login_check(qr_info["uuid"])
 
                     return {
-                        "code": f"{self.qr_code_path}?t={int(time.time())}",
-                        "is_exists": os.path.exists(self.qr_code_path),
+                        "code": self.qr_latest_url,
+                        "is_exists": self.qr_uploaded,
                         "uuid": qr_info["uuid"],
                         "msg": "请使用微信扫描二维码登录",
                     }
@@ -208,10 +211,18 @@ class WeChatAPI:
                         Image.open(BytesIO(response.content))
 
                         # 保存二维码图片
-                        with open(self.qr_code_path, "wb") as f:
-                            f.write(response.content)
-
-                        logger.info(f"二维码获取成功，已保存到: {self.qr_code_path}")
+                        sb = SupabaseStorage()
+                        if sb.valid():
+                            up = sb.upload_qr(response.content)
+                            self.qr_latest_url = up["url"]
+                            self.qr_uploaded = True
+                            self.wx_login_url = self.qr_latest_url
+                        try:
+                            from core.supabase.database import db_manager
+                            db_manager.update_session_sync(self.current_session_id, status="waiting", qr_signed_url=self.qr_latest_url, expires_minutes=2)
+                        except Exception:
+                            pass
+                        logger.info("二维码获取成功")
 
                         return {"qr_url": f"{qr_api_url}?", "uuid": uuid}
 
@@ -234,9 +245,17 @@ class WeChatAPI:
                         and "image/"
                         in redirect_response.headers.get("Content-Type", "")
                     ):
-                        with open(self.qr_code_path, "wb") as f:
-                            f.write(redirect_response.content)
-
+                        sb = SupabaseStorage()
+                        if sb.valid():
+                            up = sb.upload_qr(redirect_response.content)
+                            self.qr_latest_url = up["url"]
+                            self.qr_uploaded = True
+                            self.wx_login_url = self.qr_latest_url
+                        try:
+                            from core.supabase.database import db_manager
+                            db_manager.update_session_sync(self.current_session_id, status="waiting", qr_signed_url=self.qr_latest_url, expires_minutes=2)
+                        except Exception:
+                            pass
                         return {"qr_url": redirect_url, "uuid": uuid}
 
             else:
@@ -310,18 +329,13 @@ class WeChatAPI:
             qr_url: 二维码URL
         """
         try:
-            # 确保目录存在
-            os.makedirs(os.path.dirname(self.qr_code_path), exist_ok=True)
-
-            # 如果是完整的URL，直接下载
+            sb = SupabaseStorage()
+            data_bytes = None
             if qr_url.startswith("http"):
                 response = self.session.get(qr_url)
                 response.raise_for_status()
-
-                with open(self.qr_code_path, "wb") as f:
-                    f.write(response.content)
+                data_bytes = response.content
             else:
-                # 如果是数据，生成二维码
                 qr = qrcode.QRCode(
                     version=1,
                     error_correction=qrcode.constants.ERROR_CORRECT_L,
@@ -330,22 +344,21 @@ class WeChatAPI:
                 )
                 qr.add_data(qr_url)
                 qr.make(fit=True)
-
                 img = qr.make_image(fill_color="black", back_color="white")
-
-                # 确保图片格式正确
-                if not self.qr_code_path.lower().endswith(".png"):
-                    self.qr_code_path = os.path.splitext(self.qr_code_path)[0] + ".png"
-
-                # 使用BytesIO临时保存图片，确保编码正确
                 buffer = BytesIO()
                 img.save(buffer, format="PNG")
-
-                # 写入文件
-                with open(self.qr_code_path, "wb") as f:
-                    f.write(buffer.getvalue())
-
-            logger.info(f"二维码已保存到: {self.qr_code_path}")
+                data_bytes = buffer.getvalue()
+            if sb.valid():
+                up = sb.upload_qr(data_bytes)
+                self.qr_latest_url = up["url"]
+                self.qr_uploaded = True
+                self.wx_login_url = self.qr_latest_url
+            try:
+                from core.supabase.database import db_manager
+                db_manager.update_session_sync(self.current_session_id, status="waiting", qr_signed_url=self.qr_latest_url, expires_minutes=2)
+            except Exception:
+                pass
+            logger.info("二维码已上传到 Supabase")
 
         except Exception as e:
             logger.error(f"生成二维码图片失败: {str(e)}")
@@ -404,7 +417,7 @@ class WeChatAPI:
             登录状态: 'waiting', 'scanned', 'success', 'expired', 'error'
         """
         try:
-            if not os.path.exists(self.qr_code_path):
+            if not self.qr_uploaded:
                 return "not_exists"
             check_url = f"{self.base_url}/cgi-bin/scanloginqrcode"
             self.fingerprint = self.cookies.get("fingerprint")
@@ -433,6 +446,11 @@ class WeChatAPI:
                             if self.session.cookies
                             else {}
                         )
+                    try:
+                        from core.supabase.database import db_manager
+                        db_manager.update_session_sync(self.current_session_id, status="success")
+                    except Exception:
+                        pass
                     return "success"  # 登录成功
                 elif status == 2:
                     return "scanned"  # 已扫描
@@ -458,7 +476,6 @@ class WeChatAPI:
                 # 获取token和cookies
                 self._extract_login_info()
 
-                # 清理二维码文件
                 self._clean_qr_code()
                 from driver.cookies import expire
 
@@ -468,9 +485,14 @@ class WeChatAPI:
                         "cookies": self.cookies,
                         "cookies_str": self._format_cookies_string(),
                         "token": self.token,
-                        "wx_login_url": self.qr_code_path,
+                        "wx_login_url": self.qr_latest_url,
                         "expiry": expire(self.cookies_dict),
                     }
+                try:
+                    from core.supabase.database import db_manager
+                    db_manager.write_secret_sync(self.current_session_id, self.token, self._format_cookies_string(), None)
+                except Exception:
+                    pass
                 self._get_account_info()
                 logger.info("登录成功！")
 
@@ -638,7 +660,7 @@ class WeChatAPI:
                 "cookies": self.cookies,
                 "cookies_str": self._format_cookies_string(),
                 "token": self.token,
-                "wx_login_url": self.qr_code_path,
+                "wx_login_url": self.qr_latest_url,
                 "expiry": expire(self.cookies_dict),
             }
             set_token(login_data, account_info)
@@ -717,8 +739,8 @@ class WeChatAPI:
         清理二维码文件
         """
         try:
-            if os.path.exists(self.qr_code_path):
-                os.remove(self.qr_code_path)
+            self.qr_uploaded = False
+            self.qr_latest_url = None
         except Exception as e:
             logger.error(f"清理二维码文件失败: {str(e)}")
 
@@ -814,8 +836,8 @@ class WeChatAPI:
     def GetCode(self, CallBack=None, Notice=None):
         if self.GetHasCode():
             return {
-                "code": f"/{self.wx_login_url}?t={(time.time())}",
-                "is_exists": self.GetHasCode(),
+                "code": self.qr_latest_url,
+                "is_exists": True,
             }
         from core.print import print_warning
         from core.thread import ThreadManager
@@ -826,14 +848,12 @@ class WeChatAPI:
         self.thread.start()  # 启动线程
         print("微信公众平台登录 v1.34")
         return {
-            "code": f"/{self.wx_login_url}?t={(time.time())}",
-            "is_exists": self.GetHasCode(),
+            "code": self.qr_latest_url,
+            "is_exists": self.qr_uploaded,
         }
 
     def GetHasCode(self):
-        if os.path.exists(self.wx_login_url):
-            return True
-        return False
+        return self.qr_uploaded
 
     def HasLogin(self):
         return self._islogin and not self.GetHasCode()

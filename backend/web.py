@@ -1,11 +1,8 @@
-from fastapi import FastAPI, Request, APIRouter, Depends
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, Request, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from fastapi.openapi.models import OAuthFlows as OAuthFlowsModel
-from fastapi.openapi.models import OAuthFlowPassword
-from fastapi.openapi.utils import get_openapi
+
 from apis.auth import router as auth_router
 from apis.user import router as user_router
 from apis.article import router as article_router
@@ -19,10 +16,25 @@ from apis.tags import router as tags_router
 from apis.export import router as export_router
 from apis.tools import router as tools_router
 from apis.events import router as events_router
-import apis
-import os
+
 from core.config import cfg, VERSION, API_BASE
-from core.async_queue import TaskQueue
+from core.utils import TaskQueue
+
+from dotenv import load_dotenv
+load_dotenv()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # 应用启动时启动后台任务队列
+    TaskQueue.run_task_background()
+    try:
+        yield
+    finally:
+        # 应用关闭时停止并清理任务队列
+        TaskQueue.stop()
+        TaskQueue.clear_queue()
+
 
 app = FastAPI(
     title="WeRSS API",
@@ -42,6 +54,7 @@ app = FastAPI(
         "persistAuthorization": True,
         "withCredentials": True,
     },
+    lifespan=lifespan,
 )
 
 # CORS配置
@@ -58,8 +71,8 @@ app.add_middleware(
 async def add_custom_header(request: Request, call_next):
     response = await call_next(request)
     response.headers["X-Version"] = VERSION
-    response.headers["X-Powered-By"] = "Rachel"
-    response.headers["GITHUB"] = "https://github.com/rachelos/we-mp-rss"
+    response.headers["X-Powered-By"] = "Phoenine"
+    response.headers["GITHUB"] = "https://github.com/phoenine/wechat-events-harvester"
     response.headers["Server"] = cfg.get("app_name", "WeRSS")
     return response
 
@@ -87,47 +100,3 @@ feeds_router.include_router(feed_router)
 app.include_router(api_router)
 app.include_router(resource_router)
 app.include_router(feeds_router)
-
-# 静态文件服务配置
-app.mount("/assets", StaticFiles(directory="static/assets"), name="assets")
-app.mount("/static", StaticFiles(directory="static"), name="static")
-from core.res.avatar import files_dir
-
-app.mount("/files", StaticFiles(directory=files_dir), name="files")
-
-
-# app.mount("/docs", StaticFiles(directory="./data/docs"), name="docs")
-@app.get("/{path:path}", tags=["默认"], include_in_schema=False)
-async def serve_vue_app(request: Request, path: str):
-    """处理Vue应用路由"""
-    # 排除API和静态文件路由
-    if path.startswith(("api", "assets", "static")) or path in [
-        "favicon.ico",
-        "vite.svg",
-        "logo.svg",
-    ]:
-        return None
-
-    # 返回Vue入口文件
-    index_path = os.path.join("static", "index.html")
-    if os.path.exists(index_path):
-        return FileResponse(index_path)
-
-    return {"error": "Not Found"}, 404
-
-
-@app.get("/", tags=["默认"], include_in_schema=False)
-async def serve_root(request: Request):
-    """处理根路由"""
-    return await serve_vue_app(request, "")
-
-
-@app.on_event("startup")
-def start_task_queue():
-    TaskQueue.run_task_background()
-
-
-@app.on_event("shutdown")
-def stop_task_queue():
-    TaskQueue.stop()
-    TaskQueue.clear_queue()

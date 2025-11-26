@@ -1,30 +1,22 @@
-from core.models.article import Article, DATA_STATUS
-import core.db as db
 from core.wx.base import WxGather
 from time import sleep
-from core.print import print_success, print_error
 import random
-from driver.wxarticle import Web
 
-DB = db.Db(tag="内容修正")
+from core.print import print_success, print_error, print_warning
+from driver.wxarticle import Web
+from core.repositories import article_repo
+from core.models import DataStatus as DATA_STATUS
 
 
 def fetch_articles_without_content():
-    """
-    查询content为空的文章，调用微信内容提取方法获取内容并更新数据库
-    """
-    session = DB.get_session()
+    """查询content为空的文章, 调用微信内容提取方法获取内容并更新数据库"""
     ga = WxGather().Model()
     try:
         # 查询content为空的文章
-        from sqlalchemy import or_
-
-        articles = (
-            session.query(Article)
-            .filter(or_(Article.content.is_(None), Article.content == ""))
-            .limit(10)
-            .all()
-        )
+        articles = article_repo.sync_get_articles(
+                filters={"or": [{"content": {"is": None}}, {"content": {"eq": ""}}]},
+                limit=10,
+            )
 
         if not articles:
             print_warning("暂无需要获取内容的文章")
@@ -32,29 +24,34 @@ def fetch_articles_without_content():
 
         for article in articles:
             # 构建URL
-            if article.url:
-                url = article.url
+            if article.get("url"):
+                url = article.get("url")
             else:
-                url = f"https://mp.weixin.qq.com/s/{article.id}"
+                url = f"https://mp.weixin.qq.com/s/{article.get('id')}"
 
-            print(f"正在处理文章: {article.title}, URL: {url}")
+            print(f"正在处理文章: {article.get('title')}, URL: {url}")
 
-            # 获取内容
+            # 获取内容（同步方式）
             if cfg.get("gather.content_mode", "web"):
-                content = Web.get_article_content(url).get("content")
+                content_data = Web.get_article_content(url)
+                content = (content_data or {}).get("content")
             else:
                 content = ga.content_extract(url)
+
+            # 随机延迟，避免频繁请求
             sleep(random.randint(3, 10))
+
             if content:
                 # 更新内容
-                article.content = content
+                update_data = {"content": content}
                 if content == "DELETED":
-                    print_error(f"获取文章 {article.title} 内容已被发布者删除")
-                    article.status = DATA_STATUS.DELETED
-                session.commit()
-                print_success(f"成功更新文章 {article.title} 的内容")
+                    print_error(f"获取文章 {article.get('title')} 内容已被发布者删除")
+                    update_data["status"] = DATA_STATUS.DELETED
+
+                article_repo.sync_update_article(article.get("id"), update_data)
+                print_success(f"成功更新文章 {article.get('title')} 的内容")
             else:
-                print_error(f"获取文章 {article.title} 内容失败")
+                print_error(f"获取文章 {article.get('title')} 内容失败")
 
     except Exception as e:
         print(f"处理过程中发生错误: {e}")
@@ -63,13 +60,12 @@ def fetch_articles_without_content():
 
 
 from core.task import TaskScheduler
-from core.async_queue import TaskQueueManager
+from core.utils import TaskQueue
 
 scheduler = TaskScheduler()
-task_queue = TaskQueueManager()
+task_queue = TaskQueue
 task_queue.run_task_background()
 from core.config import cfg
-from core.print import print_success, print_warning
 
 
 def start_sync_content():

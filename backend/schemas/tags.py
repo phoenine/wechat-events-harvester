@@ -1,10 +1,9 @@
 from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel
-import json
 
 
-class TagsBase(BaseModel):
+class TagsCreate(BaseModel):
     name: str
     cover: Optional[str] = None
     intro: Optional[str] = None
@@ -12,11 +11,7 @@ class TagsBase(BaseModel):
     status: int = 1
 
 
-class TagsCreate(TagsBase):
-    pass
-
-
-class Tags(TagsBase):
+class Tags(TagsCreate):
     id: str
     created_at: datetime
     updated_at: datetime

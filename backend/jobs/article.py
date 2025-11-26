@@ -1,19 +1,20 @@
-import core.wx as wx
-import core.db as db
+from core.repositories import article_repo
 from core.config import DEBUG, cfg
-from core.models.article import Article
-
-DB = db.Db(tag="文章采集API")
 
 
-def UpdateArticle(art: dict, check_exist=False):
+def UpdateArticle(art: dict, check_exist: bool = False):
+    """更新文章"""
     mps_count = 0
     if DEBUG:
-        # DB.delete_article(art)
         pass
-    if DB.add_article(art, check_exist=check_exist):
-        mps_count = mps_count + 1
-        return True
+    try:
+        # 使用 Supabase 创建文章
+        result = article_repo.sync_create_article(art)
+        if result:
+            mps_count = mps_count + 1
+            return True
+    except Exception as e:
+        print(f"创建文章失败: {e}")
     return False
 
 

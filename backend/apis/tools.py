@@ -1,66 +1,28 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
-from fastapi.responses import FileResponse
-from starlette.background import BackgroundTask
-from pydantic import BaseModel, Field
-from core.auth import get_current_user
-from core.db import DB
-from .base import success_response, error_response, BaseResponse
-from datetime import datetime
-from typing import Optional, List
 import os
 import threading
-import asyncio
-from concurrent.futures import ThreadPoolExecutor
+from fastapi import APIRouter, Depends, HTTPException, Query, Body
+from fastapi.responses import FileResponse
+from starlette.background import BackgroundTask
+from core.supabase.auth import get_current_user
+from schemas import (
+    success_response,
+    error_response,
+    BaseResponse,
+    ExportArticlesRequest,
+    DeleteFileRequest,
+    API_VERSION,
+)
+from datetime import datetime
+from typing import Optional, List
+from tools.mdtools.export import export_md_to_doc
 
-# 导入导出工具
-from tools.mdtools.export import export_md_to_doc, process_articles
 
 router = APIRouter(prefix="/tools", tags=["工具"])
 
 
-# Schema 模型定义
-class ExportArticlesRequest(BaseModel):
-    """导出文章请求模型"""
-
-    mp_id: str = Field(..., description="公众号ID", example="MP_WXS_3892772220")
-    doc_id: Optional[List[str]] = Field(
-        None, description="文档ID列表，为空则导出所有文章", example=[]
-    )
-    page_size: int = Field(10, description="每页数量", ge=1, le=10)
-    page_count: int = Field(1, description="页数，0表示全部", ge=0, le=10000)
-    add_title: bool = Field(True, description="是否添加标题")
-    remove_images: bool = Field(True, description="是否移除图片")
-    remove_links: bool = Field(False, description="是否移除链接")
-    export_md: bool = Field(False, description="是否导出Markdown格式")
-    export_docx: bool = Field(False, description="是否导出Word文档格式")
-    export_json: bool = Field(False, description="是否导出JSON格式")
-    export_csv: bool = Field(False, description="是否导出CSV格式")
-    export_pdf: bool = Field(True, description="是否导出PDF格式")
-    zip_filename: Optional[str] = Field(
-        None, description="压缩包文件名，为空则自动生成", example=""
-    )
-
-
-class ExportArticlesResponse(BaseModel):
-    """导出文章响应模型"""
-
-    record_count: int = Field(..., description="导出的文章数量")
-    export_path: str = Field(..., description="导出文件路径")
-    message: str = Field(..., description="导出结果消息")
-
-
-class ExportFileInfo(BaseModel):
-    """导出文件信息模型"""
-
-    filename: str = Field(..., description="文件名")
-    size: int = Field(..., description="文件大小（字节）")
-    created_time: str = Field(..., description="创建时间（ISO格式）")
-    modified_time: str = Field(..., description="修改时间（ISO格式）")
-
-
 def _export_articles_worker(
     mp_id: str,
-    doc_id: Optional[List[int]],
+    doc_id: Optional[List[str]],
     page_size: int,
     page_count: int,
     add_title: bool,
@@ -95,7 +57,7 @@ def _export_articles_worker(
 
 @router.post("/export/articles", summary="导出文章")
 async def export_articles(
-    request: ExportArticlesRequest, current_user: dict = Depends(get_current_user)
+    request: ExportArticlesRequest, _current_user: dict = Depends(get_current_user)
 ):
     """
     导出文章为多种格式（使用线程池异步处理）
@@ -108,10 +70,12 @@ async def export_articles(
 
         # 直接生成 zip_filename 并返回
         docx_path = f"./data/docs/{request.mp_id}/"
-        if request.zip_filename:
-            zip_file_path = f"{docx_path}{request.zip_filename}"
-        else:
-            zip_file_path = f"{docx_path}exported_articles_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+        # 确保目录存在
+        os.makedirs(docx_path, exist_ok=True)
+
+        # 统一确定最终导出文件名（仅文件名，不含路径）
+        zip_filename = request.zip_filename or f"exported_articles_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
+        zip_file_path = f"{docx_path}{zip_filename}"
 
         # 启动后台线程执行导出操作
         export_thread = threading.Thread(
@@ -129,7 +93,7 @@ async def export_articles(
                 request.export_json,
                 request.export_csv,
                 request.export_pdf,
-                request.zip_filename,
+                zip_filename,
             ),
             name=f"export_articles_{request.mp_id}",
         )
@@ -148,7 +112,7 @@ async def export_articles(
 @router.get("/export/download", summary="下载导出文件")
 async def download_export_file(
     filename: str = Query(..., description="文件名"),
-    mp_id: Optional[str] = Query(None, description="公众号ID"),
+    mp_id: str = Query(..., description="公众号ID"),
     delete_after_download: bool = Query(False, description="下载后删除文件"),
     # current_user: dict = Depends(get_current_user)
 ):
@@ -179,30 +143,23 @@ async def download_export_file(
 
 @router.get("/export/list", summary="获取导出文件列表", response_model=BaseResponse)
 async def list_export_files(
-    mp_id: Optional[str] = Query(None, description="公众号ID"),
-    current_user: dict = Depends(get_current_user),
+    mp_id: str = Query(..., description="公众号ID"),
+    _current_user: dict = Depends(get_current_user),
 ):
     """
     获取指定公众号的导出文件列表
     """
     try:
-        from .ver import API_VERSION
-
         safe_root = os.path.abspath(os.path.normpath("./data/docs"))
-        # Ensure mp_id is not None or empty
-
         export_path = os.path.abspath(os.path.join(safe_root, mp_id))
-        # Validate that export_path is within safe_root
         if not export_path.startswith(safe_root):
             return success_response([])
         if not os.path.exists(export_path):
             return success_response([])
-        # Check directory permissions
         if not os.access(export_path, os.R_OK):
             return error_response(403, "无权限访问该目录")
         files = []
         for root, _, filenames in os.walk(export_path):
-            # Ensure root is also within safe_root, in case of symlinks or traversal
             root_norm = os.path.abspath(root)
             if not root_norm.startswith(safe_root):
                 continue
@@ -238,20 +195,10 @@ async def list_export_files(
         return error_response(500, f"获取文件列表失败: {str(e)}")
 
 
-# 删除文件请求模型
-class DeleteFileRequest(BaseModel):
-    """删除文件请求模型"""
-
-    filename: str = Field(
-        ..., description="文件名", example="exported_articles_20241021_143000.zip"
-    )
-    mp_id: str = Field(..., description="公众号ID", example="MP_WXS_3892772220")
-
-
 @router.delete("/export/delete", summary="删除导出文件", response_model=BaseResponse)
 async def delete_export_file(
     request: DeleteFileRequest = Body(...),
-    current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_user),
 ):
     """
     删除指定的导出文件
@@ -302,11 +249,11 @@ async def delete_export_file(
 async def delete_export_file_by_query(
     filename: str = Query(..., description="文件名"),
     mp_id: str = Query(..., description="公众号ID"),
-    current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_user),
 ):
     """
     删除指定的导出文件（通过查询参数）
     """
     # 创建请求对象并调用主删除函数
     request = DeleteFileRequest(filename=filename, mp_id=mp_id)
-    return await delete_export_file(request, current_user)
+    return await delete_export_file(request, _current_user)

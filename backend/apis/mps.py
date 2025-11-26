@@ -1,3 +1,6 @@
+import time
+from datetime import datetime, timezone
+from typing import List, Dict, Any, cast, Optional
 from fastapi import (
     APIRouter,
     Depends,
@@ -10,22 +13,18 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse
 from fastapi.background import BackgroundTasks
-from core.auth import get_current_user
-from core.db import DB
+from core.supabase.auth import get_current_user
+from core.repositories import feed_repo
 from core.wx import search_Biz
-from .base import success_response, error_response
-from datetime import datetime
+from schemas import success_response, error_response
 from core.config import cfg
 from core.res import save_avatar_locally
-import io
-import os
 from jobs.article import UpdateArticle
+from core.utils import TaskQueue
+from core.wx import WxGather
+
 
 router = APIRouter(prefix=f"/mps", tags=["公众号管理"])
-# import core.db as db
-# UPDB=db.Db("数据抓取")
-# def UpdateArticle(art:dict):
-#             return UPDB.add_article(art)
 
 
 @router.get("/search/{kw}", summary="搜索公众号")
@@ -33,9 +32,8 @@ async def search_mp(
     kw: str = "",
     limit: int = 10,
     offset: int = 0,
-    current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_user),
 ):
-    session = DB.get_session()
     try:
         result = search_Biz(kw, limit=limit, offset=offset)
         data = {
@@ -60,29 +58,34 @@ async def get_mps(
     limit: int = Query(10, ge=1, le=100),
     offset: int = Query(0, ge=0),
     kw: str = Query(""),
-    current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_user),
 ):
-    session = DB.get_session()
     try:
-        from core.models.feed import Feed
-
-        query = session.query(Feed)
+        filters = {}
         if kw:
-            query = query.filter(Feed.mp_name.ilike(f"%{kw}%"))
-        total = query.count()
-        mps = query.order_by(Feed.created_at.desc()).limit(limit).offset(offset).all()
+            filters["mp_name"] = {"ilike": f"%{kw}%"}
+
+        # 获取总数
+        total = await feed_repo.count_feeds(filters=filters)
+
+        # 获取分页数据
+        feeds_raw = await feed_repo.get_feeds(
+            filters=filters, limit=limit, offset=offset, order_by="created_at.desc"
+        )
+        feeds: List[Dict[str, Any]] = cast(List[Dict[str, Any]], feeds_raw)
+
         return success_response(
             {
                 "list": [
                     {
-                        "id": mp.id,
-                        "mp_name": mp.mp_name,
-                        "mp_cover": mp.mp_cover,
-                        "mp_intro": mp.mp_intro,
-                        "status": mp.status,
-                        "created_at": mp.created_at.isoformat(),
+                        "id": feed["id"],
+                        "mp_name": feed["mp_name"],
+                        "mp_cover": feed["mp_cover"],
+                        "mp_intro": feed["mp_intro"],
+                        "status": feed["status"],
+                        "created_at": feed["created_at"],
                     }
-                    for mp in mps
+                    for feed in feeds
                 ],
                 "page": {"limit": limit, "offset": offset, "total": total},
                 "total": total,
@@ -101,37 +104,35 @@ async def update_mps(
     mp_id: str,
     start_page: int = 0,
     end_page: int = 1,
-    current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_user),
 ):
-    session = DB.get_session()
     try:
-        from core.models.feed import Feed
-
-        mp = session.query(Feed).filter(Feed.id == mp_id).first()
+        # 获取公众号信息
+        mp_raw = await feed_repo.get_feed_by_id(mp_id)
+        mp: Dict[str, Any] = cast(Dict[str, Any], mp_raw)
         if not mp:
             return error_response(code=40401, message="请选择一个公众号")
-        import time
 
         sync_interval = cfg.get("sync_interval", 60)
-        if mp.update_time is None:
-            mp.update_time = int(time.time()) - sync_interval
-        time_span = int(time.time()) - int(mp.update_time)
+        if mp.get("update_time") is None:
+            mp["update_time"] = int(time.time()) - sync_interval
+        time_span = int(time.time()) - int(mp.get("update_time", 0))
         if time_span < sync_interval:
             return error_response(
                 code=40402, message="请不要频繁更新操作", data={"time_span": time_span}
             )
         result = []
 
-        def UpArt(mp):
+        def UpArt(mp_data):
             from core.wx import WxGather
             from core.print import print_error
 
             try:
                 wx = WxGather().Model()
                 wx.get_Articles(
-                    mp.faker_id,
-                    Mps_id=mp.id,
-                    Mps_title=mp.mp_name,
+                    mp_data.get("faker_id"),
+                    Mps_id=mp_data.get("id"),
+                    Mps_title=mp_data.get("mp_name"),
                     CallBack=UpdateArticle,
                     start_page=start_page,
                     MaxPage=end_page,
@@ -142,6 +143,7 @@ async def update_mps(
                 print_error(f"更新公众号文章线程异常: {e}")
 
         import threading
+
         threading.Thread(target=UpArt, args=(mp,)).start()
 
         return success_response(
@@ -158,13 +160,9 @@ async def update_mps(
 @router.get("/{mp_id}", summary="获取公众号详情")
 async def get_mp(
     mp_id: str,
-    # current_user: dict = Depends(get_current_user)
 ):
-    session = DB.get_session()
     try:
-        from core.models.feed import Feed
-
-        mp = session.query(Feed).filter(Feed.id == mp_id).first()
+        mp = await feed_repo.get_feed_by_id(mp_id)
         if not mp:
             raise HTTPException(
                 status_code=status.HTTP_201_CREATED,
@@ -181,7 +179,7 @@ async def get_mp(
 
 @router.post("/by_article", summary="通过文章链接获取公众号详情")
 async def get_mp_by_article(
-    url: str = Query(..., min_length=1), current_user: dict = Depends(get_current_user)
+    url: str = Query(..., min_length=1), _current_user: dict = Depends(get_current_user)
 ):
     try:
         from driver.wxarticle import Web
@@ -209,101 +207,115 @@ async def add_mp(
     mp_id: str = Body(None, max_length=255),
     avatar: str = Body(None, max_length=500),
     mp_intro: str = Body(None, max_length=255),
-    current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_user),
 ):
-    session = DB.get_session()
     try:
-        from core.models.feed import Feed
-        import time
-
-        now = datetime.now()
-
         import base64
 
-        mpx_id = base64.b64decode(mp_id).decode("utf-8")
-        local_avatar_path = f"{save_avatar_locally(avatar)}"
+        if not mp_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=error_response(code=40001, message="缺少公众号ID"),
+            )
 
-        # 检查公众号是否已存在
-        existing_feed = session.query(Feed).filter(Feed.faker_id == mp_id).first()
+        try:
+            mpx_id = base64.b64decode(mp_id).decode("utf-8")
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=error_response(code=40002, message="无效的公众号ID"),
+            )
+
+        cover_path: Optional[str] = None
+        if avatar:
+            cover_path = save_avatar_locally(avatar)
+        elif mp_cover:
+            cover_path = mp_cover
+
+        now = datetime.now(timezone.utc)
+
+        # 检查公众号是否已存在（按 faker_id / mp_id）
+        existing_feed_raw = await feed_repo.get_feed_by_faker_id(mp_id)
+        existing_feed: Dict[str, Any] = cast(Dict[str, Any], existing_feed_raw)
 
         if existing_feed:
             # 更新现有记录
-            existing_feed.mp_name = mp_name
-            existing_feed.mp_cover = local_avatar_path
-            existing_feed.mp_intro = mp_intro
-            existing_feed.updated_at = now
+            update_data: Dict[str, Any] = {
+                "mp_name": mp_name,
+                "mp_intro": mp_intro,
+                "updated_at": now,
+            }
+            if cover_path:
+                update_data["mp_cover"] = cover_path
+
+            await feed_repo.update_feed(existing_feed["id"], update_data)
+            feed = {**existing_feed, **update_data}
         else:
             # 创建新的Feed记录
-            new_feed = Feed(
-                id=f"MP_WXS_{mpx_id}",
-                mp_name=mp_name,
-                mp_cover=local_avatar_path,
-                mp_intro=mp_intro,
-                status=1,  # 默认启用状态
-                created_at=now,
-                updated_at=now,
-                faker_id=mp_id,
-                update_time=0,
-                sync_time=0,
-            )
-            session.add(new_feed)
+            feed_data: Dict[str, Any] = {
+                "id": f"MP_WXS_{mpx_id}",
+                "mp_name": mp_name,
+                "mp_cover": cover_path,
+                "mp_intro": mp_intro,
+                "status": 1,  # 默认启用状态
+                "created_at": now,
+                "updated_at": now,
+                "faker_id": mp_id,
+                "update_time": 0,
+                "sync_time": 0,
+            }
+            feed = await feed_repo.create_feed(feed_data)
 
-        session.commit()
-
-        feed = existing_feed if existing_feed else new_feed
-        # 在这里实现第一次添加获取公众号文章
+        # 在这里实现第一次添加时获取公众号文章
         if not existing_feed:
-            from core.async_queue import TaskQueue
-            from core.wx import WxGather
-
-            Max_page = int(cfg.get("max_page", "2"))
+            max_page = int(cfg.get("max_page", "2"))
             TaskQueue.add_task(
                 WxGather().Model().get_Articles,
-                faker_id=feed.faker_id,
-                Mps_id=feed.id,
+                faker_id=feed["faker_id"],
+                Mps_id=feed["id"],
                 CallBack=UpdateArticle,
-                MaxPage=Max_page,
-                Mps_title=mp_name,
+                MaxPage=max_page,
+                Mps_title=feed["mp_name"],
             )
 
         return success_response(
             {
-                "id": feed.id,
-                "mp_name": feed.mp_name,
-                "mp_cover": feed.mp_cover,
-                "mp_intro": feed.mp_intro,
-                "status": feed.status,
-                "faker_id": mp_id,
-                "created_at": feed.created_at.isoformat(),
+                "id": feed["id"],
+                "mp_name": feed["mp_name"],
+                "mp_cover": feed.get("mp_cover"),
+                "mp_intro": feed.get("mp_intro"),
+                "status": feed.get("status"),
+                "faker_id": feed.get("faker_id", mp_id),
+                "created_at": feed.get("created_at"),
             }
         )
+    except HTTPException:
+        # 直接透传上面主动抛出的 HTTPException
+        raise
     except Exception as e:
-        session.rollback()
         print(f"添加公众号错误: {str(e)}")
         raise HTTPException(
-            status_code=status.HTTP_201_CREATED,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=error_response(code=50001, message="添加公众号失败"),
         )
 
 
 @router.delete("/{mp_id}", summary="删除订阅号")
-async def delete_mp(mp_id: str, current_user: dict = Depends(get_current_user)):
-    session = DB.get_session()
+async def delete_mp(
+    mp_id: str,
+    _current_user: dict = Depends(get_current_user),
+):
     try:
-        from core.models.feed import Feed
-
-        mp = session.query(Feed).filter(Feed.id == mp_id).first()
+        mp = await feed_repo.get_feed_by_id(mp_id)
         if not mp:
             raise HTTPException(
                 status_code=status.HTTP_201_CREATED,
                 detail=error_response(code=40401, message="订阅号不存在"),
             )
 
-        session.delete(mp)
-        session.commit()
+        await feed_repo.delete_feed(mp_id)
         return success_response({"message": "订阅号删除成功", "id": mp_id})
     except Exception as e:
-        session.rollback()
         print(f"删除订阅号错误: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_201_CREATED,

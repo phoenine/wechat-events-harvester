@@ -1,4 +1,4 @@
-from .playwright_driver import PlaywrightController
+from driver.playwright_driver import PlaywrightController
 from typing import Dict
 from core.print import print_error, print_info, print_success, print_warning
 import time

@@ -1,15 +1,15 @@
 import platform
 import time
 import sys
-import psutil
 from fastapi import APIRouter, Depends
 from typing import Dict, Any
-from core.auth import get_current_user
-from .base import success_response, error_response
+from core.supabase.auth import get_current_user
+from schemas import success_response, error_response, API_VERSION
 from driver.token import wx_cfg
 from core.config import cfg
 from jobs.mps import TaskQueue
 from driver.success import getLoginInfo, getStatus
+
 
 router = APIRouter(prefix="/sys", tags=["系统信息"])
 
@@ -20,7 +20,6 @@ _START_TIME = time.time()
 @router.get("/base_info", summary="常规信息")
 async def get_base_info() -> Dict[str, Any]:
     try:
-        from .ver import API_VERSION
         from core.config import VERSION as CORE_VERSION, LATEST_VERSION
 
         base_info = {
@@ -59,13 +58,14 @@ async def system_resources(
         return error_response(code=50002, message=f"获取系统资源失败: {str(e)}")
 
 
-from core.article_lax import ARTICLE_INFO, laxArticle
-from .ver import API_VERSION
+from core.article_lax import laxArticle
+from schemas import API_VERSION
 from core.base import VERSION as CORE_VERSION, LATEST_VERSION
 
+# TODO : 后面优化这个接口，改成异步的
 
 @router.get("/info", summary="获取系统信息")
-async def get_system_info(
+def get_system_info(
     current_user: dict = Depends(get_current_user),
 ) -> Dict[str, Any]:
     """获取当前系统的各种信息
@@ -106,7 +106,7 @@ async def get_system_info(
                 "info": getLoginInfo(),
                 "login": getStatus(),
             },
-            "article": ARTICLE_INFO,
+            "article": laxArticle(),
             "queue": TaskQueue.get_queue_info(),
         }
         return success_response(data=system_info)

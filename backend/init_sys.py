@@ -1,53 +1,45 @@
-from dotenv import load_dotenv
-load_dotenv()
-from core.models.user import User
-from core.models.article import Article
-from core.models.config_management import ConfigManagement
-from core.models.feed import Feed
-from core.models.message_task import MessageTask
-from core.db import Db, DB
-from core.config import cfg
-from core.auth import pwd_context
+import asyncio
 import time
 import os
+
+from dotenv import load_dotenv
+load_dotenv()
+
+from core.supabase.auth import pwd_context
+from core.repositories import user_repo
 from core.print import print_info, print_error
 
 
-def init_user(_db: Db):
+async def init_user():
     try:
         username, password = os.getenv("USERNAME", "admin"), os.getenv(
             "PASSWORD", "admin@123"
         )
-        session = _db.get_session()
-        session.add(
-            User(
-                id=0,
-                username=username,
-                password_hash=pwd_context.hash(password),
-            )
-        )
-        session.commit()
+
+        user_data = {
+            "id": "0",
+            "username": username,
+            "password_hash": pwd_context.hash(password),
+            "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "updated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        }
+
+        await user_repo.create_user(user_data)
         print_info(f"初始化用户成功,请使用以下凭据登录：{username}")
     except Exception as e:
-        # print_error(f"Init error: {str(e)}")
-        pass
+        print_error(f"Init error: {str(e)}")
 
 
 def sync_models():
-    # 同步模型到表结构
-    from data_sync import DatabaseSynchronizer
-
-    DB.create_tables()
-    time.sleep(3)
-    synchronizer = DatabaseSynchronizer(db_url=cfg.get("db", ""))
-    synchronizer.sync()
-    print_info("模型同步完成")
+    """同步模型到表结构"""
+    print_info("使用Supabase, 表结构通过迁移管理, 跳过模型同步")
+    pass
 
 
-def init():
+async def init():
     sync_models()
-    init_user(DB)
+    await init_user()
 
 
 if __name__ == "__main__":
-    init()
+    asyncio.run(init())

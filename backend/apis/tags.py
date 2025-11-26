@@ -1,16 +1,12 @@
+import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
-from typing import List
-from datetime import datetime
-from core.models.tags import Tags as TagsModel
-from core.database import get_db
-from sqlalchemy.orm import Session
-from schemas.tags import Tags, TagsCreate
-from .base import success_response, error_response
-from core.auth import get_current_user, requires_permission
+from datetime import datetime, timezone
+from core.repositories import tag_repo
+from schemas import success_response, error_response, TagsCreate
+from core.supabase.auth import get_current_user
+from core.print import print_error
 
-# 标签管理API路由
-# 提供标签的增删改查功能
-# 需要管理员权限执行写操作
+
 router = APIRouter(prefix="/tags", tags=["标签管理"])
 
 
@@ -18,154 +14,97 @@ router = APIRouter(prefix="/tags", tags=["标签管理"])
 async def get_tags(
     offset: int = 0,
     limit: int = 100,
-    db: Session = Depends(get_db),
-    cur_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_user),
 ):
-    """
-    获取标签列表
-
-    参数:
-    - offset: 跳过记录数，用于分页
-    - limit: 每页记录数，默认100
-
-    返回:
-    - 包含标签列表和分页信息的成功响应
-    """
-    query = db.query(TagsModel)
-    total = query.count()
-    tags = query.offset(offset).limit(limit).all()
-    return success_response(
-        data={
-            "list": tags,
-            "page": {"limit": limit, "offset": offset, "total": total},
-            "total": total,
-        }
-    )
+    """获取标签列表"""
+    try:
+        total = await tag_repo.count_tags()
+        tags = await tag_repo.get_tags(limit=limit, offset=offset)
+        return success_response(
+            data={
+                "list": tags,
+                "page": {"limit": limit, "offset": offset, "total": total},
+                "total": total,
+            }
+        )
+    except Exception as e:
+        return error_response(code=500, message=f"获取标签列表失败: {str(e)}")
 
 
 @router.post("", summary="创建新标签", description="创建一个新的标签")
 async def create_tag(
     tag: TagsCreate,
-    db: Session = Depends(get_db),
-    cur_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_user),
 ):
-    """
-    创建新标签
-
-    参数:
-    - tag: TagsCreate模型，包含标签信息
-
-    请求体示例:
-    {
-        "name": "新标签",
-        "cover": "http://example.com/cover.jpg",
-        "intro": "新标签的描述",
-        "status": 1
-    }
-
-    返回:
-    - 成功: 包含新建标签信息的响应
-    - 失败: 错误响应
-    """
-    import uuid
+    """创建新标签"""
 
     try:
-        db_tag = TagsModel(
-            id=str(uuid.uuid4()),
-            name=tag.name or "",
-            cover=tag.cover or "",
-            intro=tag.intro or "",
-            mps_id=tag.mps_id,
-            status=tag.status,
-            created_at=datetime.now(),
-            updated_at=datetime.now(),
-        )
-        db.add(db_tag)
-        db.commit()
-        db.refresh(db_tag)
-        return success_response(data=db_tag)
-    except Exception as e:
-        from core.print import print_error
+        tag_data = {
+            "id": str(uuid.uuid4()),
+            "name": tag.name or "",
+            "cover": tag.cover or "",
+            "intro": tag.intro or "",
+            "mps_id": tag.mps_id,
+            "status": tag.status,
+            "created_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc),
+        }
 
+        new_tag = await tag_repo.create_tag(tag_data)
+        return success_response(data=new_tag)
+    except Exception as e:
         print_error(e)
         raise HTTPException(
-            status_code=status.HTTP_201_CREATED,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=error_response(
                 code=50001,
-                message=f"暂无数据",
+                message=f"创建标签失败: {str(e)}",
             ),
         )
 
 
-@router.get(
-    "/{tag_id}", summary="获取单个标签详情", description="根据标签ID获取标签详细信息"
-)
+@router.get("/{tag_id}", summary="获取单个标签详情", description="根据ID获取标签详情")
 async def get_tag(
     tag_id: str,
-    db: Session = Depends(get_db),
-    cur_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_user),
 ):
-    """
-    获取单个标签详情
-
-    参数:
-    - tag_id: 标签ID
-
-    返回:
-    - 成功: 包含标签详情的响应
-    - 失败: 201错误响应(标签不存在)
-    """
-    tag = db.query(TagsModel).filter(TagsModel.id == tag_id).first()
+    """获取单个标签详情"""
+    tag = await tag_repo.get_tag_by_id(tag_id)
     if not tag:
-        return error_response(code=status.HTTP_201_CREATED, message="Tag not found")
+        return error_response(code=404, message="Tag not found")
     return success_response(data=tag)
 
 
 @router.put(
     "/{tag_id}",
     summary="更新标签信息",
-    description="根据标签ID更新标签信息",
+    description="根据ID更新标签信息",
 )
 async def update_tag(
     tag_id: str,
     tag_data: TagsCreate,
-    db: Session = Depends(get_db),
-    cur_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_user),
 ):
-    """
-    更新标签信息
-
-    参数:
-    - tag_id: 要更新的标签ID
-    - tag_data: TagsCreate模型，包含要更新的标签信息
-
-    请求体示例:
-    {
-        "name": "更新后的标签",
-        "cover": "http://example.com/new_cover.jpg",
-        "intro": "更新后的描述",
-        "status": 1
-    }
-
-    返回:
-    - 成功: 包含更新后标签信息的响应
-    - 失败: 404错误响应(标签不存在)或500错误响应(服务器错误)
-    """
+    """更新标签信息"""
     try:
-        tag = db.query(TagsModel).filter(TagsModel.id == tag_id).first()
-        if not tag:
+        existing_tag = await tag_repo.get_tag_by_id(tag_id)
+        if not existing_tag:
             return error_response(code=404, message="Tag not found")
 
-        tag.name = tag_data.name
-        tag.cover = tag_data.cover
-        tag.intro = tag_data.intro
-        tag.status = tag_data.status
-        tag.mps_id = tag_data.mps_id
-        tag.updated_at = datetime.now()
+        update_data = {
+            "name": tag_data.name,
+            "cover": tag_data.cover,
+            "intro": tag_data.intro,
+            "status": tag_data.status,
+            "mps_id": tag_data.mps_id,
+            "updated_at": datetime.now(timezone.utc),
+        }
 
-        db.commit()
-        db.refresh(tag)
-        return success_response(data=tag)
+        updated_tags = await tag_repo.update_tag(tag_id, update_data)
+        if updated_tags:
+            return success_response(data=updated_tags[0])
+        else:
+            return error_response(code=500, message="更新标签失败")
     except Exception as e:
         return error_response(code=500, message=str(e))
 
@@ -173,29 +112,18 @@ async def update_tag(
 @router.delete(
     "/{tag_id}",
     summary="删除标签",
-    description="根据标签ID删除标签",
+    description="根据ID删除标签",
 )
 async def delete_tag(
     tag_id: str,
-    db: Session = Depends(get_db),
-    cur_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_user),
 ):
-    """
-    删除标签
-
-    参数:
-    - tag_id: 要删除的标签ID
-
-    返回:
-    - 成功: 删除成功的响应
-    - 失败: 404错误响应(标签不存在)或500错误响应(服务器错误)
-    """
+    """删除标签"""
     try:
-        tag = db.query(TagsModel).filter(TagsModel.id == tag_id).first()
-        if not tag:
-            return error_response(code=status.HTTP_201_CREATED, message="Tag not found")
-        db.delete(tag)
-        db.commit()
+        existing_tag = await tag_repo.get_tag_by_id(tag_id)
+        if not existing_tag:
+            return error_response(code=404, message="Tag not found")
+        await tag_repo.delete_tag(tag_id)
         return success_response(message="Tag deleted successfully")
     except Exception as e:
-        return error_response(code=status.HTTP_201_CREATED, message=str(e))
+        return error_response(code=500, message=f"删除标签失败: {str(e)}")

@@ -1,24 +1,21 @@
-from .base import Base, Column, String, Integer, DateTime, Text, DATA_STATUS
+from pydantic import BaseModel
+from typing import Optional
+from datetime import datetime
 
-
-class ArticleBase(Base):
-    from_attributes = True
-    __tablename__ = "articles"
-
-    id = Column(String(255), primary_key=True)
-    mp_id = Column(String(255))
-    title = Column(String(1000))
-    pic_url = Column(String(500))
-    url = Column(String(500))
-    description = Column(Text)
-    status = Column(Integer, default=1)
-    publish_time = Column(Integer, index=True)
-    publish_at = Column(DateTime, index=True)
-    created_at = Column(DateTime)
-    updated_at = Column(DateTime)
-    is_export = Column(Integer)
-
+class ArticleBase(BaseModel):
+    id: str
+    mp_id: Optional[str] = None
+    title: Optional[str] = None
+    pic_url: Optional[str] = None
+    url: Optional[str] = None
+    description: Optional[str] = None
+    status: int = 1
+    publish_time: Optional[int] = None
+    publish_at: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+    is_export: Optional[int] = None
 
 class Article(ArticleBase):
-    content = Column(Text)
-    content_md = Column(Text)
+    content: Optional[str] = None
+    content_md: Optional[str] = None

@@ -7,6 +7,7 @@ services:
       # Supabase PostgreSQL连接配置
       - DB=postgresql+psycopg2://postgres:${POSTGRES_PASSWORD:-your-super-secret-and-long-postgres-password}@${POSTGRES_HOST}:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-postgres}?sslmode=${DB_SSLMODE:-disable}
       # 应用配置
+      - TZ=Asia/Shanghai
       - APP_NAME=we-mp-rss
       - SERVER_NAME=we-mp-rss
       - WEB_NAME=WeRSS微信公众号订阅助手
@@ -38,6 +39,7 @@ services:
       args:
         VITE_API_BASE_URL: http://localhost:38001/
     environment:
+      - TZ=Asia/Shanghai
       - VITE_API_BASE_URL=http://localhost:38001/
     ports:
       - "30000:30000"

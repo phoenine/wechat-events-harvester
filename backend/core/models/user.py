@@ -1,30 +1,29 @@
-from .base import Base, Column, String, Integer, DateTime, Boolean, Text
+from typing import Optional
+from pydantic import BaseModel
 
 
-class User(Base):
-    __tablename__ = "users"
 
-    id = Column(String(255), primary_key=True)
-    username = Column(String(50), unique=True, nullable=False)
-    password_hash = Column(String(255), nullable=False)
-    is_active = Column(Boolean, default=True)
-    role = Column(String(20))  # admin/editor/user
-    permissions = Column(Text)  # 权限列表
-    nickname = Column(String(50), default="")  # 昵称
-    avatar = Column(String(255), default="/static/default-avatar.png")  # 头像
-    email = Column(String(50), default="")
-    mp_name = Column(String(255))
-    mp_cover = Column(String(255))
-    mp_intro = Column(String(255))
-    status = Column(Integer)
-    sync_time = Column(DateTime)
-    update_time = Column(DateTime)
-    created_at = Column(DateTime)
-    updated_at = Column(DateTime)
-    faker_id = Column(String(255))
+class User(BaseModel):
+    id: str
+    username: str
+    password_hash: str
+    is_active: bool = True
+    role: Optional[str] = None
+    permissions: Optional[str] = None
+    nickname: str = ""
+    avatar: str = "/static/default-avatar.png"   #TODO 这里的路径需要修改
+    email: str = ""
+    mp_name: Optional[str] = None
+    mp_cover: Optional[str] = None
+    mp_intro: Optional[str] = None
+    status: Optional[int] = None
+    sync_time: Optional[str] = None
+    update_time: Optional[str] = None
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+    faker_id: Optional[str] = None
 
     def verify_password(self, password: str) -> bool:
-        """验证密码"""
-        from core.auth import pwd_context
+        from core.supabase.auth import pwd_context
 
         return pwd_context.verify(password, self.password_hash)

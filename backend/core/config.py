@@ -2,9 +2,9 @@ import yaml
 import sys
 import os
 import argparse
-from string import Template
+from typing import Any
 from core.print import print_warning, print_error, print_info
-from .file import FileCrypto
+from core.file import FileCrypto
 
 
 class Config:
@@ -79,7 +79,8 @@ class Config:
                 raise
             # 加密整个YAML内容
             encrypted_content = self._encrypt(yaml_content)
-            os.remove(self.config_path)
+            if os.path.exists(self.config_path):
+                os.remove(self.config_path)
             with open(self.config_path, "w", encoding="utf-8") as f:
                 f.write(encrypted_content)
             self.reload()
@@ -142,7 +143,7 @@ class Config:
     def reload(self):
         self.config = self.get_config()
 
-    def set(self, key, default: any = None):
+    def set(self, key: str, default: Any = None) -> None:
         self.config[key] = default
         self.save_config()
 
@@ -163,8 +164,11 @@ class Config:
         except:
             return v
 
-    def get(self, key, default: any = None):
-        _config = self.replace_env_vars(self.config)
+    def get(self, key: str, default: Any = None) -> Any:
+        _config = getattr(self, "_config", None)
+        if _config is None:
+            _config = self.replace_env_vars(self.config)
+            self._config = _config
 
         # 支持嵌套key访问
         keys = key.split(".") if isinstance(key, str) else [key]
@@ -178,8 +182,10 @@ class Config:
             else:
                 return val
         except (KeyError, TypeError):
-            print_warning("Key {} not found in configuration".format(key))
-        return default
+            # 仅在未提供默认值时发出警告，避免对带默认值的可选配置产生噪音日志
+            if default is None:
+                print_warning(f"Key {key} not found in configuration")
+            return default
 
 
 cfg = Config()

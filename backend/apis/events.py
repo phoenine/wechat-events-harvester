@@ -1,4 +1,8 @@
 import os
+import re
+import json
+import requests
+from typing import Tuple
 from fastapi import (
     APIRouter,
     Depends,
@@ -8,35 +12,20 @@ from fastapi import (
     status as fast_status,
 )
 from typing import Optional, Dict, Any
-from datetime import datetime, timedelta
-from sqlalchemy import and_
-from core.auth import get_current_user
-from core.db import DB
-from core.models.article import Article
-from core.models.events import Events
-from .base import success_response, error_response
-from core.models.base import DATA_STATUS
-from schemas.events import EventCreate, EventUpdate
-import re
-import json
-import requests
-from typing import Tuple
+from datetime import datetime, timedelta, timezone
+from core.supabase.auth import get_current_user
+from core.repositories import article_repo, event_repo
+from schemas import success_response, error_response, EventCreate, EventUpdate
 from core.log import logger
-
-
-# FastAPI/Pydantic v1/v2 compatibility for regex/pattern
-def QueryPattern(default: str, pat: str):
-    try:
-        return Query(default, pattern=pat)  # Pydantic v2
-    except TypeError:
-        return Query(default, regex=pat)  # Pydantic v1
 
 
 router = APIRouter(prefix="/events", tags=["活动"])
 
 
+
+
 def _get_date_range(scope: str):
-    now = datetime.now()
+    now = datetime.now(timezone.utc)
     start_of_day = datetime(now.year, now.month, now.day)
     if scope in ("today", "day"):
         return start_of_day, start_of_day + timedelta(days=1)
@@ -242,79 +231,84 @@ def _analyze_article_by_llm(
     return ret
 
 
-def _upsert_event(
-    session, article: Article, analysis: Dict[str, Any]
-) -> Tuple[Events, bool]:
+async def _upsert_event(article: Dict, analysis: Dict[str, Any]) -> Tuple[Dict, bool]:
     """
     以 article_id 作为唯一目标，存在则更新，不存在则创建；返回 (event, created_flag)。
     """
-    existing = session.query(Events).filter(Events.article_id == article.id).first()
-    now = datetime.now()
-    if existing:
-        logger.info(f"[events.upsert] update article_id={article.id}")
-        existing.registration_time = analysis.get("registration_time", "即时")
-        existing.registration_method = analysis.get(
-            "registration_method", article.url or "无"
-        )
-        existing.event_time = analysis.get("event_time", "无")
-        existing.event_fee = analysis.get("event_fee", "无")
-        existing.audience = analysis.get("audience", "无")
-        # 新增字段
-        existing.registration_title = analysis.get("registration_title", "无")
-        # 强制使用文章库URL
-        existing.article_url = article.url or "无"
-        existing.updated_at = now
+    # 查询是否已存在活动记录（通过 repository 封装）
+    existing_events = await event_repo.get_events(
+        article_id=article["id"], limit=1, offset=0
+    )
+
+    now = datetime.now(timezone.utc)
+    if existing_events:
+        existing = existing_events[0]
+        logger.info(f"[events.upsert] update article_id={article['id']}")
+
+        update_data = {
+            "registration_time": analysis.get("registration_time", "即时"),
+            "registration_method": analysis.get(
+                "registration_method", article.get("url") or "无"
+            ),
+            "event_time": analysis.get("event_time", "无"),
+            "event_fee": analysis.get("event_fee", "无"),
+            "audience": analysis.get("audience", "无"),
+            "registration_title": analysis.get("registration_title", "无"),
+            "article_url": article.get("url") or "无",
+            "updated_at": now.isoformat(),
+        }
+
+        updated_events = await event_repo.update_event(existing["id"], update_data)
 
         logger.debug(
             "[events.upsert] update fields "
-            f"registration_time={existing.registration_time!r}, "
-            f"registration_method={existing.registration_method!r}, "
-            f"event_time={existing.event_time!r}, "
-            f"event_fee={existing.event_fee!r}, "
-            f"audience={existing.audience!r}, "
-            f"updated_at={existing.updated_at}"
+            f"registration_time={update_data['registration_time']!r}, "
+            f"registration_method={update_data['registration_method']!r}, "
+            f"event_time={update_data['event_time']!r}, "
+            f"event_fee={update_data['event_fee']!r}, "
+            f"audience={update_data['audience']!r}, "
+            f"updated_at={update_data['updated_at']}"
         )
-        return existing, False
+        return updated_events[0] if updated_events else existing, False
     else:
-        logger.info(f"[events.upsert] create article_id={article.id}")
-        evt = Events(
-            article_id=article.id,
-            registration_time=analysis.get("registration_time", "即时"),
-            registration_method=analysis.get(
-                "registration_method", article.url or "无"
+        logger.info(f"[events.upsert] create article_id={article['id']}")
+
+        event_data = {
+            "article_id": article["id"],
+            "registration_time": analysis.get("registration_time", "即时"),
+            "registration_method": analysis.get(
+                "registration_method", article.get("url") or "无"
             ),
-            event_time=analysis.get("event_time", "无"),
-            event_fee=analysis.get("event_fee", "无"),
-            audience=analysis.get("audience", "无"),
-            # 新增字段
-            registration_title=analysis.get("registration_title", "无"),
-            # 强制使用文章库URL
-            article_url=article.url or "无",
-            created_at=now,
-            updated_at=now,
-        )
-        session.add(evt)
+            "event_time": analysis.get("event_time", "无"),
+            "event_fee": analysis.get("event_fee", "无"),
+            "audience": analysis.get("audience", "无"),
+            "registration_title": analysis.get("registration_title", "无"),
+            "article_url": article.get("url") or "无",
+            "created_at": now.isoformat(),
+            "updated_at": now.isoformat(),
+        }
+
+        created_event = await event_repo.create_event(event_data)
 
         logger.debug(
             "[events.upsert] create fields "
-            f"registration_time={evt.registration_time!r}, "
-            f"registration_method={evt.registration_method!r}, "
-            f"event_time={evt.event_time!r}, "
-            f"event_fee={evt.event_fee!r}, "
-            f"audience={evt.audience!r}, "
-            f"created_at={evt.created_at}, updated_at={evt.updated_at}"
+            f"registration_time={event_data['registration_time']!r}, "
+            f"registration_method={event_data['registration_method']!r}, "
+            f"event_time={event_data['event_time']!r}, "
+            f"event_fee={event_data['event_fee']!r}, "
+            f"audience={event_data['audience']!r}, "
+            f"created_at={event_data['created_at']}, updated_at={event_data['updated_at']}"
         )
-        return evt, True
+        return created_event, True
 
 
 @router.post("/fetch", summary="活动fetch（按日期筛选文章并分析生成events）")
-def fetch_events(
-    scope: str = QueryPattern("today", "^(today|day|week|all)$"),
+async def fetch_events(
+    scope: str = Query("today", pattern="^(today|day|week|all)$"),
     limit: int = Query(200, ge=1, le=200),
     payload: Optional[Dict[str, Any]] = Body(None),
-    current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_user),
 ):
-    session = DB.get_session()
     # Normalize scope/limit from JSON body if provided (supports {"scope":"week","limit":100})
     if payload:
         body_scope = (payload.get("scope") or "").strip().lower()
@@ -334,46 +328,50 @@ def fetch_events(
                 f"[events.fetch] date_range: {start.isoformat()} ~ {end.isoformat()}"
             )
 
-        q = session.query(Article).filter(Article.status != DATA_STATUS.DELETED)
+        # 获取文章列表
         if start and end:
-            q = q.filter(and_(Article.publish_at >= start, Article.publish_at < end))
-        q = q.order_by(Article.publish_at.desc()).limit(limit)
+            articles = await article_repo.get_articles(
+                date_range=(start, end), limit=limit
+            )
+        else:
+            articles = await article_repo.get_articles(limit=limit)
 
-        articles = q.all()
         logger.info(f"[events.fetch] scanned_articles={len(articles)}")
 
-        existing_ids = {row[0] for row in session.query(Events.article_id).all()}
+        # 获取已存在的活动文章ID
+        existing_ids = set(await event_repo.get_event_article_ids())
         logger.info(f"[events.fetch] existing_events={len(existing_ids)}")
 
         created, updated = [], []
         for art in articles:
-            if art.id in existing_ids:
-                logger.info(f"[events.fetch] skip existing article_id={art.id}")
+            if art["id"] in existing_ids:
+                logger.info(f"[events.fetch] skip existing article_id={art['id']}")
                 continue
             logger.debug(
                 "[events.fetch] article "
-                f"id={art.id}, title={ (art.title or '')[:50]!r }, "
-                f"publish_time={getattr(art, 'publish_time', None)}, "
-                f"publish_at={getattr(art, 'publish_at', None)}, "
-                f"url={getattr(art, 'url', None)}"
+                f"id={art['id']}, title={ (art.get('title') or '')[:50]!r }, "
+                f"publish_time={art.get('publish_time')}, "
+                f"publish_at={art.get('publish_at')}, "
+                f"url={art.get('url')}"
             )
 
             analysis = _analyze_article_by_llm(
-                art.title, getattr(art, "content", None), art.url
+                art.get("title"), art.get("content"), art.get("url")
             )
-            logger.debug(f"[events.fetch] analysis article_id={art.id} -> {analysis}")
+            logger.debug(
+                f"[events.fetch] analysis article_id={art['id']} -> {analysis}"
+            )
 
             if not analysis.get("is_event", False):
-                logger.info(f"[events.fetch] skip non-event article_id={art.id}")
+                logger.info(f"[events.fetch] skip non-event article_id={art['id']}")
                 continue
 
-            evt, created_flag = _upsert_event(session, art, analysis)
+            evt, created_flag = await _upsert_event(art, analysis)
             if created_flag:
-                created.append(evt.article_id)
+                created.append(evt["article_id"])
             else:
-                updated.append(evt.article_id)
+                updated.append(evt["article_id"])
 
-        session.commit()
         logger.info(
             f"[events.fetch] result created={len(created)}, updated={len(updated)}"
         )
@@ -388,90 +386,83 @@ def fetch_events(
             }
         )
     except Exception as e:
-        session.rollback()
         logger.exception(f"[events.fetch] failed: {e}")
         raise HTTPException(
             status_code=fast_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=error_response(code=50001, message=f"活动fetch失败: {str(e)}"),
         )
-    finally:
-        session.close()
 
 
 @router.post("", summary="创建活动记录")
-def create_event(
+async def create_event(
     payload: EventCreate = Body(...),
-    current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_user),
 ):
-    session = DB.get_session()
     try:
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         created_at = payload.created_at or now
         updated_at = payload.updated_at or now
 
         # 统一从文章库获取URL
-        art = session.query(Article).filter(Article.id == payload.article_id).first()
+        art = await article_repo.get_articles_by_id(payload.article_id)
         if not art:
             raise HTTPException(
                 status_code=fast_status.HTTP_400_BAD_REQUEST,
                 detail=error_response(code=40011, message="关联文章不存在"),
             )
 
-        evt = Events(
-            article_id=payload.article_id,
-            registration_time=payload.registration_time or "即时",
-            registration_method=payload.registration_method or (art.url or "无"),
-            event_time=payload.event_time or "无",
-            event_fee=payload.event_fee or "无",
-            audience=payload.audience or "无",
-            registration_title=payload.registration_title or "无",
+        event_data = {
+            "article_id": payload.article_id,
+            "registration_time": payload.registration_time or "即时",
+            "registration_method": payload.registration_method
+            or (art.get("url") or "无"),
+            "event_time": payload.event_time or "无",
+            "event_fee": payload.event_fee or "无",
+            "audience": payload.audience or "无",
+            "registration_title": payload.registration_title or "无",
             # 强制使用文章库URL
-            article_url=art.url or "无",
-            created_at=created_at,
-            updated_at=updated_at,
-        )
-        session.add(evt)
-        session.commit()
-        session.refresh(evt)
+            "article_url": art.get("url") or "无",
+            "created_at": created_at.isoformat(),
+            "updated_at": updated_at.isoformat(),
+        }
+
+        evt = await event_repo.create_event(event_data)
         return success_response(evt)
     except Exception as e:
-        session.rollback()
+        logger.exception(f"[events.create] failed: {e}")
         raise HTTPException(
             status_code=fast_status.HTTP_400_BAD_REQUEST,
             detail=error_response(code=40001, message=f"创建失败: {str(e)}"),
         )
-    finally:
-        session.close()
 
 
 @router.get("", summary="查询活动记录列表")
-def list_events(
+async def list_events(
     article_id: Optional[str] = Query(None),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
-    current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_user),
 ):
-    session = DB.get_session()
     try:
-        q = session.query(Events)
-        if article_id:
-            q = q.filter(Events.article_id == article_id)
-        items = q.order_by(Events.updated_at.desc()).offset(offset).limit(limit).all()
-        return success_response(items)
+        events = await event_repo.get_events(
+            article_id=article_id, limit=limit, offset=offset
+        )
+        return success_response(events)
     except Exception as e:
+        logger.exception(f"[events.list] failed: {e}")
         raise HTTPException(
             status_code=fast_status.HTTP_400_BAD_REQUEST,
             detail=error_response(code=40002, message=f"查询失败: {str(e)}"),
         )
-    finally:
-        session.close()
 
 
 @router.get("/{event_id}", summary="获取活动记录详情")
-def get_event(event_id: int, current_user: dict = Depends(get_current_user)):
-    session = DB.get_session()
+async def get_event(
+    event_id: str,
+    _current_user: dict = Depends(get_current_user),
+):
     try:
-        evt = session.query(Events).filter(Events.id == event_id).first()
+        evt = await event_repo.get_event_by_id(event_id)
         if not evt:
             raise HTTPException(
                 status_code=fast_status.HTTP_404_NOT_FOUND,
@@ -481,86 +472,85 @@ def get_event(event_id: int, current_user: dict = Depends(get_current_user)):
     except HTTPException as e:
         raise e
     except Exception as e:
+        logger.exception(f"[events.get] failed: {e}")
         raise HTTPException(
             status_code=fast_status.HTTP_400_BAD_REQUEST,
             detail=error_response(code=40003, message=f"获取失败: {str(e)}"),
         )
-    finally:
-        session.close()
 
 
 @router.put("/{event_id}", summary="更新活动记录")
-def update_event(
-    event_id: int,
+async def update_event(
+    event_id: str,
     payload: EventUpdate = Body(...),
-    current_user: dict = Depends(get_current_user),
+    _current_user: dict = Depends(get_current_user),
 ):
-    session = DB.get_session()
     try:
-        evt = session.query(Events).filter(Events.id == event_id).first()
+        evt = await event_repo.get_event_by_id(event_id)
         if not evt:
             raise HTTPException(
                 status_code=fast_status.HTTP_404_NOT_FOUND,
                 detail=error_response(code=40401, message="活动记录不存在"),
             )
-        now = datetime.now()
+
+        now = datetime.now(timezone.utc)
+        update_data = {}
+
         if payload.registration_time is not None:
-            evt.registration_time = payload.registration_time
+            update_data["registration_time"] = payload.registration_time
         if payload.registration_method is not None:
-            evt.registration_method = payload.registration_method
+            update_data["registration_method"] = payload.registration_method
         if payload.event_time is not None:
-            evt.event_time = payload.event_time
+            update_data["event_time"] = payload.event_time
         if payload.event_fee is not None:
-            evt.event_fee = payload.event_fee
+            update_data["event_fee"] = payload.event_fee
         if payload.audience is not None:
-            evt.audience = payload.audience
+            update_data["audience"] = payload.audience
         if payload.registration_title is not None:
-            evt.registration_title = payload.registration_title
+            update_data["registration_title"] = payload.registration_title
 
         # 每次更新都从文章库刷新一次URL（保证一致性）
-        art = session.query(Article).filter(Article.id == evt.article_id).first()
-        evt.article_url = (art.url if art else None) or "无"
+        art = await article_repo.get_articles_by_id(evt["article_id"])
+        update_data["article_url"] = (art.get("url") if art else None) or "无"
 
         # 时间字段更新（允许覆盖created_at；若未提供updated_at则写当前时间）
         if payload.created_at is not None:
-            evt.created_at = payload.created_at
-        evt.updated_at = payload.updated_at or now
+            update_data["created_at"] = payload.created_at.isoformat()
+        update_data["updated_at"] = (
+            payload.updated_at.isoformat() if payload.updated_at else now.isoformat()
+        )
 
-        session.commit()
-        session.refresh(evt)
-        return success_response(evt)
+        updated_evt = await event_repo.update_event(event_id, update_data)
+        return success_response(updated_evt[0] if updated_evt else evt)
     except HTTPException as e:
         raise e
     except Exception as e:
-        session.rollback()
+        logger.exception(f"[events.update] failed: {e}")
         raise HTTPException(
             status_code=fast_status.HTTP_400_BAD_REQUEST,
             detail=error_response(code=40004, message=f"更新失败: {str(e)}"),
         )
-    finally:
-        session.close()
 
 
 @router.delete("/{event_id}", summary="删除活动记录")
-def delete_event(event_id: int, current_user: dict = Depends(get_current_user)):
-    session = DB.get_session()
+async def delete_event(
+    event_id: str,
+    _current_user: dict = Depends(get_current_user),
+):
     try:
-        evt = session.query(Events).filter(Events.id == event_id).first()
+        evt = await event_repo.get_event_by_id(event_id)
         if not evt:
             raise HTTPException(
                 status_code=fast_status.HTTP_404_NOT_FOUND,
                 detail=error_response(code=40401, message="活动记录不存在"),
             )
-        session.delete(evt)
-        session.commit()
+        await event_repo.delete_event(event_id)
         return success_response({"deleted_id": event_id})
     except HTTPException as e:
         raise e
     except Exception as e:
-        session.rollback()
+        logger.exception(f"[events.delete] failed: {e}")
         raise HTTPException(
             status_code=fast_status.HTTP_400_BAD_REQUEST,
             detail=error_response(code=40005, message=f"删除失败: {str(e)}"),
         )
-    finally:
-        session.close()

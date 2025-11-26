@@ -1,16 +1,11 @@
-from core.models.message_task import MessageTask
-from core.models.feed import Feed
-from core.models.article import Article
-from core.print import print_success
+from core.models import Article, Feed, MessageTask
 from core.notice import notice
 from dataclasses import dataclass
 from core.lax import TemplateParser
 from datetime import datetime
 from core.log import logger
 from core.config import cfg
-from bs4 import BeautifulSoup
 from core.content_format import format_content
-import re
 
 
 @dataclass
@@ -22,15 +17,7 @@ class MessageWebHook:
 
 
 def send_message(hook: MessageWebHook) -> str:
-    """
-    发送格式化消息
-
-    参数:
-        hook: MessageWebHook对象，包含任务、订阅源和文章信息
-
-    返回:
-        str: 格式化后的消息内容
-    """
+    """发送格式化消息"""
     template = (
         hook.task.message_template
         if hook.task.message_template
@@ -53,25 +40,15 @@ def send_message(hook: MessageWebHook) -> str:
         "now": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
     message = parser.render(data)
-    # 这里可以添加发送消息的具体实现
+    # TODO 这里可以添加发送消息的具体实现
+
     print("发送消息:", message)
     notice(hook.task.web_hook_url, hook.task.name, message)
     return message
 
 
 def call_webhook(hook: MessageWebHook) -> str:
-    """
-    调用webhook接口发送数据
-
-    参数:
-        hook: MessageWebHook对象，包含任务、订阅源和文章信息
-
-    返回:
-        str: 调用结果信息
-
-    异常:
-        ValueError: 当webhook调用失败时抛出
-    """
+    """调用webhook接口发送数据"""
     template = (
         hook.task.message_template
         if hook.task.message_template

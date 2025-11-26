@@ -41,28 +41,25 @@ export const QRCode = () => {
       qrCodeIntervalId = 0;
     }
     qrCodeCounter = 0;
-    
-    http.get('/wx/auth/qr/code').then(res => {
-      const maxAttempts = 500;
+
+    http.get('/wx/auth/qr/code').then(() => {
+      const maxAttempts = 120; // 约2分钟
       qrCodeIntervalId = setInterval(() => {
         qrCodeCounter++;
-        if(qrCodeCounter > maxAttempts) {
+        if (qrCodeCounter > maxAttempts) {
           clearInterval(qrCodeIntervalId);
           qrCodeIntervalId = 0;
           reject(new Error('获取二维码超时'));
           return;
         }
-        axios.head(res?.code).then(response => {
-          if(response.status==200){
-            console.log(response)
-            clearInterval(qrCodeIntervalId);
-            resolve(res)
+        http.get('/wx/auth/qr/url').then((uRes: any) => {
+          const url = uRes?.image_url || uRes?.data?.image_url
+          if (url) {
+            clearInterval(qrCodeIntervalId)
+            resolve({ code: url })
           }
-        }).catch(err => {
-          if(qrCodeCounter >= maxAttempts) {
-            clearInterval(qrCodeIntervalId);
-            reject(err);
-          }
+        }).catch(() => {
+          // 忽略错误，继续轮询
         })
       }, 1000)
     }).catch(reject)
