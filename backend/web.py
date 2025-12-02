@@ -1,5 +1,8 @@
 from contextlib import asynccontextmanager
 
+from dotenv import load_dotenv
+load_dotenv()
+
 from fastapi import FastAPI, Request, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -19,9 +22,6 @@ from apis.events import router as events_router
 
 from core.config import cfg, VERSION, API_BASE
 from core.utils import TaskQueue
-
-from dotenv import load_dotenv
-load_dotenv()
 
 
 @asynccontextmanager

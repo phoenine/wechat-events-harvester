@@ -26,6 +26,7 @@ SUPABASE_SERVICE_KEY = settings.service_key
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token", auto_error=False)
 security = HTTPBearer(auto_error=False)
 
+
 class SupabaseAuthManager:
     """Supabase 认证管理器"""
 
@@ -78,32 +79,43 @@ class SupabaseAuthManager:
         return self.client
 
     async def sign_up(
-        self, email: str, password: str, username: Optional[str] = None
+        self,
+        email: str,
+        password: str,
+        user_metadata: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """用户注册（使用 Supabase Auth）"""
+        """用户注册（使用 Supabase Auth）
+
+        - email: 用户邮箱
+        - password: 登录密码
+        - user_metadata: 额外的用户元数据（如 role、username 等），会写入 Supabase Auth 的 user_metadata
+        """
         try:
             client = self.get_client()
 
-            # 注册用户
+            # 组装 user_metadata：调用方传入的元数据优先，缺失时自动补充 username
+            metadata: Dict[str, Any] = dict(user_metadata or {})
+            if "username" not in metadata:
+                # 默认使用邮箱前缀作为 username
+                metadata["username"] = email.split("@")[0]
+
+            # 注册用户（依赖 Supabase Auth）
             auth_response = client.auth.sign_up(
                 {
                     "email": email,
                     "password": password,
-                    "options": {"data": {"username": username or email.split("@")[0]}},
+                    "options": {
+                        "data": metadata,
+                    },
                 }
             )
 
             if auth_response.user:
-                # 创建用户资料到业务侧 user_profiles
-                from ..repositories import user_repo
-
-                await user_repo.create_user_profile(
-                    str(auth_response.user.id),
-                    username or email.split("@")[0],
-                )
-
                 logger.info(f"用户注册成功: {email}")
-                return {"user": auth_response.user, "session": auth_response.session}
+                return {
+                    "user": auth_response.user,
+                    "session": auth_response.session,
+                }
 
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,

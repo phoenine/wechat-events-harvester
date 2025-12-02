@@ -9,7 +9,7 @@ from typing import Optional, List, Dict, Any, cast
 router = APIRouter(prefix=f"/articles", tags=["文章管理"])
 
 
-@router.api_route("", summary="获取文章列表", methods=["GET", "POST"])
+@router.get("", summary="获取文章列表")
 async def get_articles(
     mp_id: Optional[str] = Query(None),
     status: Optional[str] = Query(None),

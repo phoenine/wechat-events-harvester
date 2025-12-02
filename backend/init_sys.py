@@ -1,33 +1,33 @@
 import asyncio
-import time
 import os
 
 from dotenv import load_dotenv
 load_dotenv()
 
-from core.supabase.auth import pwd_context
-from core.repositories import user_repo
+from core.supabase.auth import auth_manager
 from core.print import print_info, print_error
 
 
 async def init_user():
+    """使用 Supabase Auth 初始化管理员账户"""
+
+    username: str = os.getenv("USERNAME", "admin@example.com")
+    password: str = os.getenv("PASSWORD", "admin@123")
+
     try:
-        username, password = os.getenv("USERNAME", "admin"), os.getenv(
-            "PASSWORD", "admin@123"
+        result = await auth_manager.sign_up(
+            email=username,
+            password=password,
+            user_metadata={"role": "admin"},
         )
 
-        user_data = {
-            "id": "0",
-            "username": username,
-            "password_hash": pwd_context.hash(password),
-            "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-            "updated_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-        }
-
-        await user_repo.create_user(user_data)
-        print_info(f"初始化用户成功,请使用以下凭据登录：{username}")
+        print_info(f"初始化 Supabase Auth 用户成功, 请使用以下凭据登录：{username}")
     except Exception as e:
-        print_error(f"Init error: {str(e)}")
+        msg = str(e)
+        if "User already registered" in msg or "already exists" in msg:
+            print_info(f"Supabase Auth 中已存在用户：{username}，跳过创建")
+        else:
+            print_error(f"Init error: {msg}")
 
 
 def sync_models():

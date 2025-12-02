@@ -16,7 +16,8 @@ from threading import Lock, Timer
 from PIL import Image
 import qrcode
 from io import BytesIO
-from core.supabase.storage import SupabaseStorage
+import asyncio
+from core.supabase import supabase_storage_qr
 
 
 from .token import get as get_token, set_token
@@ -98,7 +99,10 @@ class WeChatAPI:
                 qr_info = self._extract_qr_info(response.text)
 
                 if qr_info:
-                    self._generate_qr_image(qr_info["qr_url"])
+                    # 如果前面的流程（例如 _get_qr_info_api）已经成功上传二维码并设置了 qr_latest_url，
+                    # 则不再重复生成和上传二维码，避免 Supabase 存在重复图片。
+                    if not self.qr_uploaded or not self.qr_latest_url:
+                        self._generate_qr_image(qr_info["qr_url"])
 
                     # 启动登录状态检查
                     self._start_login_check(qr_info["uuid"])
@@ -210,16 +214,31 @@ class WeChatAPI:
 
                         Image.open(BytesIO(response.content))
 
-                        # 保存二维码图片
-                        sb = SupabaseStorage()
-                        if sb.valid():
-                            up = sb.upload_qr(response.content)
-                            self.qr_latest_url = up["url"]
-                            self.qr_uploaded = True
-                            self.wx_login_url = self.qr_latest_url
+                        # 保存二维码图片到 Supabase
+                        if supabase_storage_qr.valid():
+                            try:
+                                try:
+                                    loop = asyncio.get_event_loop()
+                                except RuntimeError:
+                                    loop = asyncio.new_event_loop()
+                                    asyncio.set_event_loop(loop)
+                                up = loop.run_until_complete(
+                                    supabase_storage_qr.upload_qr(response.content)
+                                )
+                                self.qr_latest_url = up["url"]
+                                self.qr_uploaded = True
+                                self.wx_login_url = self.qr_latest_url
+                            except Exception as upload_err:
+                                logger.error(f"二维码上传 Supabase 失败: {upload_err}")
+
                         try:
                             from core.supabase.database import db_manager
-                            db_manager.update_session_sync(self.current_session_id, status="waiting", qr_signed_url=self.qr_latest_url, expires_minutes=2)
+                            db_manager.update_session_sync(
+                                self.current_session_id,
+                                status="waiting",
+                                qr_signed_url=self.qr_latest_url,
+                                expires_minutes=2,
+                            )
                         except Exception:
                             pass
                         logger.info("二维码获取成功")
@@ -245,15 +264,29 @@ class WeChatAPI:
                         and "image/"
                         in redirect_response.headers.get("Content-Type", "")
                     ):
-                        sb = SupabaseStorage()
-                        if sb.valid():
-                            up = sb.upload_qr(redirect_response.content)
-                            self.qr_latest_url = up["url"]
-                            self.qr_uploaded = True
-                            self.wx_login_url = self.qr_latest_url
+                        if supabase_storage_qr.valid():
+                            try:
+                                try:
+                                    loop = asyncio.get_event_loop()
+                                except RuntimeError:
+                                    loop = asyncio.new_event_loop()
+                                    asyncio.set_event_loop(loop)
+                                up = loop.run_until_complete(
+                                    supabase_storage_qr.upload_qr(redirect_response.content)
+                                )
+                                self.qr_latest_url = up["url"]
+                                self.qr_uploaded = True
+                                self.wx_login_url = self.qr_latest_url
+                            except Exception as upload_err:
+                                logger.error(f"重定向二维码上传 Supabase 失败: {upload_err}")
                         try:
                             from core.supabase.database import db_manager
-                            db_manager.update_session_sync(self.current_session_id, status="waiting", qr_signed_url=self.qr_latest_url, expires_minutes=2)
+                            db_manager.update_session_sync(
+                                self.current_session_id,
+                                status="waiting",
+                                qr_signed_url=self.qr_latest_url,
+                                expires_minutes=2,
+                            )
                         except Exception:
                             pass
                         return {"qr_url": redirect_url, "uuid": uuid}
@@ -329,7 +362,6 @@ class WeChatAPI:
             qr_url: 二维码URL
         """
         try:
-            sb = SupabaseStorage()
             data_bytes = None
             if qr_url.startswith("http"):
                 response = self.session.get(qr_url)
@@ -348,11 +380,22 @@ class WeChatAPI:
                 buffer = BytesIO()
                 img.save(buffer, format="PNG")
                 data_bytes = buffer.getvalue()
-            if sb.valid():
-                up = sb.upload_qr(data_bytes)
-                self.qr_latest_url = up["url"]
-                self.qr_uploaded = True
-                self.wx_login_url = self.qr_latest_url
+
+            if data_bytes and supabase_storage_qr.valid():
+                try:
+                    try:
+                        loop = asyncio.get_event_loop()
+                    except RuntimeError:
+                        loop = asyncio.new_event_loop()
+                        asyncio.set_event_loop(loop)
+                    up = loop.run_until_complete(
+                        supabase_storage_qr.upload_qr(data_bytes)
+                    )
+                    self.qr_latest_url = up["url"]
+                    self.qr_uploaded = True
+                    self.wx_login_url = self.qr_latest_url
+                except Exception as upload_err:
+                    logger.error(f"生成二维码后上传 Supabase 失败: {upload_err}")
             try:
                 from core.supabase.database import db_manager
                 db_manager.update_session_sync(self.current_session_id, status="waiting", qr_signed_url=self.qr_latest_url, expires_minutes=2)

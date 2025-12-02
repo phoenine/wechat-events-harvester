@@ -1,8 +1,8 @@
--- 用户表（使用Supabase Auth，不需要单独创建）
--- 但需要创建用户资料扩展表
-CREATE TABLE IF NOT EXISTS public.user_profiles (
-    id UUID PRIMARY KEY REFERENCES auth.users (id) ON DELETE CASCADE,
-    username TEXT UNIQUE,
+-- 创建用户扩展资料表 profiles
+CREATE TABLE IF NOT EXISTS public.profiles (
+    user_id UUID PRIMARY KEY REFERENCES auth.users (id) ON DELETE CASCADE,
+    nickname TEXT,
+    avatar_url TEXT,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );

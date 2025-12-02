@@ -1,14 +1,14 @@
+import os
+import re
+import time
 import sys
 import threading
 import asyncio
+from threading import Timer, Lock
 from driver.playwright_driver import PlaywrightController
 from driver.success import Success
-import time
-import os
 from driver.success import getStatus
 from driver.store import Store
-import re
-from threading import Timer, Lock
 from driver.cookies import expire
 from core.print import print_error, print_warning, print_info, print_success
 
@@ -283,10 +283,13 @@ class Wx:
                 raise Exception("未找到登录二维码元素")
 
             img_bytes = qrcode.screenshot()
-            from core.supabase.storage import SupabaseStorage
-            sb = SupabaseStorage()
-            if sb.valid():
-                up = sb.upload_qr(img_bytes)
+
+            # 使用 core.supabase 中预配置的 supabase_storage_qr，并在当前线程事件循环中同步执行异步上传
+            from core.supabase import supabase_storage_qr
+
+            if supabase_storage_qr.valid():
+                loop = asyncio.get_event_loop()
+                up = loop.run_until_complete(supabase_storage_qr.upload_qr(img_bytes))
                 self.wx_login_url = up["url"]
                 self.HasCode = True
             try:

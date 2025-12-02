@@ -1,5 +1,5 @@
 -- 启用RLS（行级安全）
-ALTER TABLE public.user_profiles ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.feeds ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.articles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.tags ENABLE ROW LEVEL SECURITY;
@@ -9,15 +9,15 @@ ALTER TABLE public.message_task_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.config_management ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.auth_sessions ENABLE ROW LEVEL SECURITY;
 
--- 用户资料表策略
-CREATE POLICY "用户只能查看自己的资料" ON public.user_profiles
-    FOR SELECT USING (auth.uid() = id);
+-- 用户资料表策略（profiles）
+CREATE POLICY "用户只能查看自己的资料" ON public.profiles
+    FOR SELECT USING (auth.uid() = user_id);
 
-CREATE POLICY "用户可以更新自己的资料" ON public.user_profiles
-    FOR UPDATE USING (auth.uid() = id);
+CREATE POLICY "用户可以更新自己的资料" ON public.profiles
+    FOR UPDATE USING (auth.uid() = user_id);
 
-CREATE POLICY "用户可以插入自己的资料" ON public.user_profiles
-    FOR INSERT WITH CHECK (auth.uid() = id);
+CREATE POLICY "用户可以插入自己的资料" ON public.profiles
+    FOR INSERT WITH CHECK (auth.uid() = user_id);
 
 -- 订阅源表策略 - 所有认证用户都可以查看和操作
 CREATE POLICY "认证用户可以查看订阅源" ON public.feeds
@@ -117,4 +117,4 @@ GRANT SELECT ON ALL TABLES IN SCHEMA public TO anon;
 GRANT SELECT ON ALL SEQUENCES IN SCHEMA public TO anon;
 
 -- 授权特定表的插入权限给匿名用户（用于注册）
-GRANT INSERT ON public.user_profiles TO anon;
+GRANT INSERT ON public.profiles TO anon;
