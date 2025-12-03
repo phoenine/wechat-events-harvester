@@ -234,7 +234,7 @@ const showAuthQrcode = () => {
 }
 provide('showAuthQrcode', showAuthQrcode)
 const appTitle = computed(() => import.meta.env.VITE_APP_TITLE || '微信公众号订阅助手')
-const logo = ref("/static/logo.svg")
+const logo = ref("/assets/logo.svg")
 const router = useRouter()
 const route = useRoute()
 const collapsed = ref(false)

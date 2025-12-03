@@ -70,7 +70,7 @@ async def get_mps(
 
         # 获取分页数据
         feeds_raw = await feed_repo.get_feeds(
-            filters=filters, limit=limit, offset=offset, order_by="created_at.desc"
+            filters=filters, limit=limit, offset=offset, order_by="created_at"
         )
         feeds: List[Dict[str, Any]] = cast(List[Dict[str, Any]], feeds_raw)
 

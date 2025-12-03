@@ -1,18 +1,23 @@
 import http from './http'
 import type { ConfigManagement, ConfigManagementUpdate } from '@/types/configManagement'
 
-export const listConfigs = (params?: { page?: number; pageSize?: number }) => {
+export interface ListConfigsParams {
+  page?: number
+  pageSize?: number
+}
+
+export const listConfigs = (params?: ListConfigsParams) => {
+  const page = params?.page ?? 0
+  const pageSize = params?.pageSize ?? 10
   const apiParams = {
-    offset: (params?.page || 0) * (params?.pageSize || 10),
-    limit: params?.pageSize || 10
+    offset: page * pageSize,
+    limit: pageSize,
   }
   return http.get<ConfigManagement>('/wx/configs', { params: apiParams })
 }
 export const getConfig = (key: string) => {
   return http.get<ConfigManagement>(`/wx/configs/${key}`)
 }
-
-
 
 export const createConfig = (data: ConfigManagementUpdate) => {
   return http.post('/wx/configs', data)

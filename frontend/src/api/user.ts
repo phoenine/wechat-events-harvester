@@ -1,13 +1,13 @@
 import http from './http'
 
 export interface UserInfo {
+  id: string
+  email: string
   username: string
   nickname: string
-  email: string
   avatar: string
   role: string
   is_active: boolean
-  created_at: string
 }
 
 export interface UpdateUserParams {
@@ -20,11 +20,11 @@ export interface UpdateUserParams {
 }
 
 export const getUserInfo = () => {
-  return http.get<{code: number, data: UserInfo}>('/wx/user')
+  return http.get<{ code: number; data: UserInfo }>('/wx/user')
 }
 
 export const updateUserInfo = (data: UpdateUserParams) => {
-  return http.put<{code: number, message: string}>('/wx/user', data)
+  return http.put<{ code: number; message: string }>('/wx/user', data)
 }
 
 export interface ChangePasswordParams {
@@ -33,12 +33,7 @@ export interface ChangePasswordParams {
 }
 
 export const changePassword = (data: ChangePasswordParams) => {
-  return http.put<{code: number, message: string}>('/wx/user/password', data, {
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${localStorage.getItem('token')}`
-    }
-  })
+  return http.put<{ code: number; message: string }>('/wx/user/password', data)
 }
 
 // 保持旧方法向后兼容
@@ -53,9 +48,9 @@ export const toggleUserStatus = (active: boolean) => {
 export const uploadAvatar = (file: File) => {
   const formData = new FormData()
   formData.append('file', file)
-  return http.post<{code: number, url: string}>('/wx/user/avatar', formData, {
+  return http.post<{ code: number; data: { avatar: string } }>('/wx/user/avatar', formData, {
     headers: {
-      'Content-Type': 'multipart/form-data'
-    }
+      'Content-Type': 'multipart/form-data',
+    },
   })
 }

@@ -1,11 +1,5 @@
 import http from './http'
 
-export const getSysInfo = async (): Promise<any> => {
-  const data = await http.get('/wx/sys/info')
-  return data
-}
+export const getSysInfo = () => http.get('/wx/sys/info')
 
-export const getSysResources = async (): Promise<any> => {
-  const data = await http.get('/wx/sys/resources')
-  return data
-}
+export const getSysResources = () => http.get('/wx/sys/resources')

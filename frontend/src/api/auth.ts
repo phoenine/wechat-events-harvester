@@ -9,6 +9,12 @@ export interface LoginParams {
 export interface LoginResult {
   access_token: string
   token_type: string
+  expires_in: number
+  user: {
+    id: string
+    email: string
+    username: string
+  }
 }
 
 export const login = (data: LoginParams) => {
@@ -17,8 +23,8 @@ export const login = (data: LoginParams) => {
   formData.append('password', data.password)
   return http.post<LoginResult>('/wx/auth/login', formData, {
     headers: {
-      'Content-Type': 'application/x-www-form-urlencoded'
-    }
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
   })
 }
 
@@ -31,63 +37,82 @@ export interface VerifyResult {
 export const verifyToken = () => {
   return http.get<VerifyResult>('/wx/auth/verify')
 }
-let qrCodeIntervalId:number = 0;
-let qrCodeCounter = 0;
+let qrCodeIntervalId: ReturnType<typeof setInterval> | null = null
+let qrCodeCounter = 0
 
 export const QRCode = () => {
   return new Promise((resolve, reject) => {
     if (qrCodeIntervalId) {
-      clearInterval(qrCodeIntervalId);
-      qrCodeIntervalId = 0;
+      clearInterval(qrCodeIntervalId)
+      qrCodeIntervalId = null
     }
-    qrCodeCounter = 0;
+    qrCodeCounter = 0
 
-    http.get('/wx/auth/qr/code').then(() => {
-      const maxAttempts = 120; // 约2分钟
-      qrCodeIntervalId = setInterval(() => {
-        qrCodeCounter++;
-        if (qrCodeCounter > maxAttempts) {
-          clearInterval(qrCodeIntervalId);
-          qrCodeIntervalId = 0;
-          reject(new Error('获取二维码超时'));
-          return;
-        }
-        http.get('/wx/auth/qr/url').then((uRes: any) => {
-          const url = uRes?.image_url || uRes?.data?.image_url
-          if (url) {
-            clearInterval(qrCodeIntervalId)
-            resolve({ code: url })
+    http
+      .get('/wx/auth/qr/code')
+      .then(() => {
+        const maxAttempts = 120 // 约2分钟
+        qrCodeIntervalId = setInterval(() => {
+          qrCodeCounter++
+          if (qrCodeCounter > maxAttempts) {
+            if (qrCodeIntervalId) {
+              clearInterval(qrCodeIntervalId)
+              qrCodeIntervalId = null
+            }
+            reject(new Error('获取二维码超时'))
+            return
           }
-        }).catch(() => {
-          // 忽略错误，继续轮询
-        })
-      }, 1000)
-    }).catch(reject)
+          http
+            .get('/wx/auth/qr/url')
+            .then((uRes: any) => {
+              const url = uRes?.image_url || uRes?.data?.image_url
+              if (url) {
+                if (qrCodeIntervalId) {
+                  clearInterval(qrCodeIntervalId)
+                  qrCodeIntervalId = null
+                }
+                resolve({ code: url })
+              }
+            })
+            .catch(() => {
+              // 忽略错误，继续轮询
+            })
+        }, 1000)
+      })
+      .catch(reject)
   })
 }
-let interval_status_Id:number=0
+let interval_status_Id: ReturnType<typeof setInterval> | null = null
 export const checkQRCodeStatus = () => {
   return new Promise((resolve, reject) => {
-     if (interval_status_Id) {
-      clearInterval(interval_status_Id);
-      qrCodeIntervalId = 0;
+    if (interval_status_Id) {
+      clearInterval(interval_status_Id)
+      interval_status_Id = null
     }
-      interval_status_Id = setInterval(() => {
-        http.get("wx/auth/qr/status").then(response => {
-          if(response?.login_status){
-            Message.success("授权成功")
-            clearInterval(interval_status_Id)
+    interval_status_Id = setInterval(() => {
+      http
+        .get('/wx/auth/qr/status')
+        .then((response: any) => {
+          const data = response?.data
+          if (data?.login_status) {
+            Message.success('授权成功')
+            if (interval_status_Id) {
+              clearInterval(interval_status_Id)
+              interval_status_Id = null
+            }
             resolve(response)
           }
-        }).catch(err => {
+        })
+        .catch((err) => {
           // clearInterval(intervalId)
           // reject(err)
         })
-      }, 3000)
+    }, 3000)
   })
 }
 export const refreshToken = () => {
-  return http.post<LoginResult>('/wx/auth/refresh')
+  console.warn('refreshToken is disabled (no refresh_token in backend).')
+  return Promise.resolve(null)
 }
 
 export const logout = () => {

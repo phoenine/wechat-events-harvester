@@ -31,7 +31,7 @@ async def get_articles(
             status=status_int,
             limit=limit,
             offset=offset,
-            order_by="publish_at.desc",
+            order_by="publish_at",
         )
         # 显式标注类型，便于静态类型检查
         articles: List[Dict[str, Any]] = cast(List[Dict[str, Any]], articles_raw)
@@ -112,7 +112,7 @@ async def get_next_article(
             )
         # 获取同一公众号的文章
         articles_raw = await article_repo.get_articles(
-            mp_id=current_article["mp_id"], order_by="publish_at.desc"
+            mp_id=current_article["mp_id"], order_by="publish_at"
         )
         articles: List[Dict[str, Any]] = cast(List[Dict[str, Any]], articles_raw)
 
@@ -159,7 +159,7 @@ async def get_prev_article(
 
         # 获取同一公众号的文章
         articles_raw = await article_repo.get_articles(
-            mp_id=current_article["mp_id"], order_by="publish_at.desc"
+            mp_id=current_article["mp_id"], order_by="publish_at"
         )
         articles: List[Dict[str, Any]] = cast(List[Dict[str, Any]], articles_raw)
 

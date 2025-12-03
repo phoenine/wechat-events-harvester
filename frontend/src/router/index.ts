@@ -22,147 +22,147 @@ const routes = [
         path: '',
         name: 'Home',
         component: ArticleList,
-        meta: { requiresAuth: true }
+        meta: { requiresAuth: true },
       },
       {
         path: 'change-password',
         name: 'ChangePassword',
         component: ChangePassword,
-        meta: { requiresAuth: true }
+        meta: { requiresAuth: true },
       },
       {
         path: 'edit-user',
         name: 'EditUser',
         component: EditUser,
-        meta: { requiresAuth: true }
+        meta: { requiresAuth: true },
       },
       {
         path: 'add-subscription',
         name: 'AddSubscription',
         component: AddSubscription,
-        meta: { requiresAuth: true }
+        meta: { requiresAuth: true },
       },
       {
         path: 'wechat/mp',
         name: 'WeChatMpManagement',
         component: WeChatMpManagement,
-        meta: { 
+        meta: {
           requiresAuth: true,
-          permissions: ['wechat:manage'] 
-        }
+          permissions: ['wechat:manage'],
+        },
       },
-      
+
       {
         path: 'configs',
         name: 'ConfigList',
         component: ConfigList,
-        meta: { 
+        meta: {
           requiresAuth: true,
-          permissions: ['config:view'] 
-        }
+          permissions: ['config:view'],
+        },
       },
       {
         path: 'export/records',
         name: 'ExportList',
         component: ExportRecords,
-        meta: { 
+        meta: {
           requiresAuth: true,
-          permissions: ['config:view'] 
-        }
+          permissions: ['config:view'],
+        },
       },
       {
         path: 'configs/:key',
         name: 'ConfigDetail',
         component: ConfigDetail,
         props: true,
-        meta: { 
+        meta: {
           requiresAuth: true,
-          permissions: ['config:view'] 
-        }
+          permissions: ['config:view'],
+        },
       },
       {
         path: 'message-tasks',
         name: 'MessageTaskList',
         component: MessageTaskList,
-        meta: { 
+        meta: {
           requiresAuth: true,
-          permissions: ['message_task:view'] 
-        }
+          permissions: ['message_task:view'],
+        },
       },
       {
         path: 'message-tasks/add',
         name: 'MessageTaskAdd',
         component: MessageTaskForm,
-        meta: { 
+        meta: {
           requiresAuth: true,
-          permissions: ['message_task:edit'] 
-        }
+          permissions: ['message_task:edit'],
+        },
       },
       {
         path: 'message-tasks/edit/:id',
         name: 'MessageTaskEdit',
         component: MessageTaskForm,
         props: true,
-        meta: { 
+        meta: {
           requiresAuth: true,
-          permissions: ['message_task:edit'] 
-        }
+          permissions: ['message_task:edit'],
+        },
       },
       {
         path: 'sys-info',
         name: 'SysInfo',
         component: () => import('@/views/SysInfo.vue'),
-        meta: { 
+        meta: {
           requiresAuth: true,
-          permissions: ['admin'] 
-        }
+          permissions: ['admin'],
+        },
       },
       {
         path: 'tags',
         name: 'TagList',
         component: () => import('@/views/TagList.vue'),
-        meta: { 
+        meta: {
           requiresAuth: true,
-          permissions: ['tag:view'] 
-        }
+          permissions: ['tag:view'],
+        },
       },
       {
         path: 'tags/add',
         name: 'TagAdd',
         component: () => import('@/views/TagForm.vue'),
-        meta: { 
+        meta: {
           requiresAuth: true,
-          permissions: ['tag:edit'] 
-        }
+          permissions: ['tag:edit'],
+        },
       },
       {
         path: 'tags/edit/:id',
         name: 'TagEdit',
         component: () => import('@/views/TagForm.vue'),
         props: true,
-        meta: { 
+        meta: {
           requiresAuth: true,
-          permissions: ['tag:edit'] 
-        }
+          permissions: ['tag:edit'],
+        },
       },
-    ]
+    ],
   },
   {
     path: '/login',
     name: 'Login',
-    component: Login
+    component: Login,
   },
   {
-        path: '/reader',
-        name: 'NovelReader',
-        component: NovelReader,
-        meta: { requiresAuth: true }
+    path: '/reader',
+    name: 'NovelReader',
+    component: NovelReader,
+    meta: { requiresAuth: true },
   },
 ]
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
-  routes
+  routes,
 })
 
 router.beforeEach(async (to, from, next) => {
@@ -172,12 +172,12 @@ router.beforeEach(async (to, from, next) => {
   }
 
   const token = localStorage.getItem('token')
-  
+
   // 未登录则跳转登录页
   if (!token) {
     return next({
       path: '/login',
-      query: { redirect: to.fullPath } // 保存目标路由用于登录后跳转
+      query: { redirect: to.fullPath }, // 保存目标路由用于登录后跳转
     })
   }
 
@@ -193,10 +193,10 @@ router.beforeEach(async (to, from, next) => {
     localStorage.removeItem('token')
     next({
       path: '/login',
-      query: { 
+      query: {
         redirect: to.fullPath,
-        error: 'session_expired'
-      }
+        error: 'session_expired',
+      },
     })
   }
 })

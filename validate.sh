@@ -63,35 +63,35 @@ check_directory() {
 validate_dockerfile() {
     local dockerfile=$1
     local service=$2
-    
+
     if [ ! -f "$dockerfile" ]; then
         print_status "error" "$service Dockerfile not found: $dockerfile"
         return 1
     fi
-    
+
     print_status "info" "Validating $service Dockerfile..."
-    
+
     # Check for common issues
     if grep -q "ws-supabase" "$dockerfile"; then
         print_status "error" "$service Dockerfile contains incorrect path references"
         return 1
     fi
-    
+
     if grep -q "web_ui" "$dockerfile"; then
         print_status "error" "$service Dockerfile contains old path references"
         return 1
     fi
-    
+
     # Check for required instructions
     if ! grep -q "FROM" "$dockerfile"; then
         print_status "error" "$service Dockerfile missing FROM instruction"
         return 1
     fi
-    
+
     if ! grep -q "EXPOSE" "$dockerfile"; then
         print_status "warning" "$service Dockerfile missing EXPOSE instruction"
     fi
-    
+
     print_status "success" "$service Dockerfile validation passed"
     return 0
 }
@@ -100,14 +100,14 @@ validate_dockerfile() {
 validate_python() {
     local file=$1
     local description=$2
-    
+
     if [ ! -f "$file" ]; then
         print_status "error" "$description not found: $file"
         return 1
     fi
-    
+
     print_status "info" "Validating $description..."
-    
+
     # Check for Python syntax errors
     if python3 -m py_compile "$file" 2>/dev/null; then
         print_status "success" "$description syntax is valid"
@@ -115,7 +115,7 @@ validate_python() {
         print_status "error" "$description has syntax errors"
         return 1
     fi
-    
+
     return 0
 }
 
@@ -123,14 +123,14 @@ validate_python() {
 validate_config() {
     local file=$1
     local description=$2
-    
+
     if [ ! -f "$file" ]; then
         print_status "error" "$description not found: $file"
         return 1
     fi
-    
+
     print_status "info" "Validating $description..."
-    
+
     # Check for required environment variables
     if [[ "$file" == *.env* ]]; then
         local required_vars=("POSTGRES_PASSWORD" "POSTGRES_HOST" "POSTGRES_PORT" "POSTGRES_DB")
@@ -142,7 +142,7 @@ validate_config() {
             fi
         done
     fi
-    
+
     # Check for YAML syntax
     if [[ "$file" == *.yaml ]] || [[ "$file" == *.yml ]]; then
         if command -v yq >/dev/null 2>&1; then
@@ -156,44 +156,44 @@ validate_config() {
             print_status "warning" "yq not found, skipping YAML validation"
         fi
     fi
-    
+
     return 0
 }
 
 # Main validation function
 main() {
     echo "🚀 Starting validation process..."
-    
+
     local errors=0
-    
+
     # Check project structure
     print_status "info" "Checking project structure..."
-    
+
     check_directory "backend" "Backend directory" || ((errors++))
     check_directory "frontend" "Frontend directory" || ((errors++))
     check_directory ".github/workflows" "GitHub workflows directory" || ((errors++))
-    
+
     # Check configuration files
     print_status "info" "Checking configuration files..."
-    
+
     check_file ".env" "Environment file" || ((errors++))
     check_file "docker-compose.yaml" "Docker Compose file" || ((errors++))
     check_file "backend/config.example.yaml" "Backend config example" || ((errors++))
-    
+
     # Validate Dockerfiles
     print_status "info" "Validating Dockerfiles..."
-    
+
     validate_dockerfile "backend/Dockerfile" "Backend" || ((errors++))
     validate_dockerfile "frontend/Dockerfile" "Frontend" || ((errors++))
-    
+
     # Validate Docker Compose
     print_status "info" "Validating Docker Compose configuration..."
-    
+
     if [ -f "docker-compose.yaml" ]; then
         # Check for required services and port configuration
         if grep -q "backend:" "docker-compose.yaml"; then
             print_status "success" "Backend service defined"
-            
+
             # Check for port 38001
             if grep -q "38001:38001" "docker-compose.yaml"; then
                 print_status "success" "Backend port 38001 configured"
@@ -205,14 +205,14 @@ main() {
             print_status "error" "Backend service not defined"
             ((errors++))
         fi
-        
+
         if grep -q "frontend:" "docker-compose.yaml"; then
             print_status "success" "Frontend service defined"
         else
             print_status "error" "Frontend service not defined"
             ((errors++))
         fi
-        
+
         # Check for environment variables
         if grep -q "DB=" "docker-compose.yaml"; then
             print_status "success" "Database configuration found"
@@ -220,7 +220,7 @@ main() {
             print_status "error" "Database configuration missing"
             ((errors++))
         fi
-        
+
         # Check for API base URL
         if grep -q "VITE_API_BASE_URL.*38001" "docker-compose.yaml"; then
             print_status "success" "API base URL configured for port 38001"
@@ -229,36 +229,36 @@ main() {
             ((errors++))
         fi
     fi
-    
+
     # Validate Python code
     print_status "info" "Validating Python code..."
-    
+
     validate_python "backend/core/db.py" "Database module" || ((errors++))
     validate_python "backend/data_sync.py" "Data synchronization module" || ((errors++))
     validate_python "backend/web.py" "Web application" || ((errors++))
-    
+
     # Validate environment configuration
     print_status "info" "Validating environment configuration..."
-    
+
     if [ -f ".env" ]; then
         validate_config ".env" "Environment file" || ((errors++))
     fi
-    
+
     # Check for GitHub Actions workflow
     print_status "info" "Checking CI/CD configuration..."
-    
+
     if [ -f ".github/workflows/build-and-deploy.yml" ]; then
         print_status "success" "GitHub Actions workflow found"
         validate_config ".github/workflows/build-and-deploy.yml" "CI/CD workflow" || ((errors++))
     else
         print_status "warning" "GitHub Actions workflow not found"
     fi
-    
+
     # Summary
     echo ""
     echo "📋 Validation Summary:"
     echo "====================="
-    
+
     if [ $errors -eq 0 ]; then
         print_status "success" "All validations passed! 🎉"
         echo ""

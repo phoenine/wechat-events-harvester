@@ -5,6 +5,7 @@ services:
       dockerfile: Dockerfile
     environment:
       # Supabase PostgreSQL连接配置
+      - SUPABASE_URL=http://host.docker.internal:8000
       - DB=postgresql+psycopg2://postgres:${POSTGRES_PASSWORD:-your-super-secret-and-long-postgres-password}@${POSTGRES_HOST}:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-postgres}?sslmode=${DB_SSLMODE:-disable}
       # 应用配置
       - TZ=Asia/Shanghai
@@ -12,8 +13,8 @@ services:
       - SERVER_NAME=we-mp-rss
       - WEB_NAME=WeRSS微信公众号订阅助手
       - SECRET_KEY=${SECRET_KEY_BASE:-UpNVntn3cDxHJpq99YMc1T1AQgQpc8kfYTuRgBiYa15BLrx8etQoXz3gZv1/u2oq}
-      - USERNAME=admin
-      - PASSWORD=admin@123
+      - USERNAME=${USERNAME}
+      - PASSWORD=${PASSWORD}
       - ENABLE_JOB=true
       - THREADS=4
       - PORT=38001
@@ -24,7 +25,7 @@ services:
       - ./data:/app/data
     restart: unless-stopped
     networks:
-      - ws-supabase_default
+      - default
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:38001/api/docs"]
       interval: 30s
@@ -54,6 +55,6 @@ services:
       start_period: 10s
 
 networks:
-  ws-supabase_default:
-    external: true
+  default:
+    # external: true
     name: ws-supabase_default
