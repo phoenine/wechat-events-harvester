@@ -5,10 +5,10 @@ from fastapi import APIRouter, Depends
 from typing import Dict, Any
 from core.supabase.auth import get_current_user
 from schemas import success_response, error_response, API_VERSION
-from driver.token import wx_cfg
 from core.config import cfg
 from jobs.mps import TaskQueue
-from driver.success import getLoginInfo, getStatus
+from driver.wx_service import get_state as wx_get_state, get_session_info as wx_get_session_info
+from driver.state import LoginState
 
 
 router = APIRouter(prefix="/sys", tags=["系统信息"])
@@ -79,7 +79,6 @@ def get_system_info(
     """
     try:
 
-        wx_cfg.reload()
         # 获取系统信息
         system_info = {
             "os": {
@@ -99,12 +98,15 @@ def get_system_info(
             "latest_version": LATEST_VERSION,
             "need_update": CORE_VERSION != LATEST_VERSION,
             "wx": {
-                "token": wx_cfg.get("token", ""),
-                "expiry_time": (
-                    wx_cfg.get("expiry.expiry_time", "") if getStatus() else ""
+                # 是否已登录公众号后台（基于 Wx/SessionManager 的统一状态机）
+                "login": wx_get_state().get("state") == LoginState.SUCCESS.value,
+
+                # 当前公众号会话信息（来源：Store/SessionManager）
+                "session": (
+                    wx_get_session_info().get("session")
+                    if isinstance(wx_get_session_info(), dict)
+                    else None
                 ),
-                "info": getLoginInfo(),
-                "login": getStatus(),
             },
             "article": laxArticle(),
             "queue": TaskQueue.get_queue_info(),

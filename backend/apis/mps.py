@@ -182,19 +182,21 @@ async def get_mp_by_article(
     url: str = Query(..., min_length=1), _current_user: dict = Depends(get_current_user)
 ):
     try:
-        from driver.wxarticle import Web
+        from driver.wx_service import fetch_article
         import asyncio
 
         # 在后台线程中执行同步的 Playwright 调用，避免在事件循环里直接使用 Sync API
         loop = asyncio.get_running_loop()
-        info = await loop.run_in_executor(None, Web.get_article_content, url)
+        env = await loop.run_in_executor(None, fetch_article, url)
 
-        if not info:
-            raise HTTPException(
-                status_code=status.HTTP_201_CREATED,
-                detail=error_response(code=40401, message="公众号不存在"),
-            )
-        return success_response(info)
+        if not env or not env.get("ok"):
+            # 统一错误 envelope：尽量透传 reason，保持原有错误响应风格
+            err = (env or {}).get("error") or {}
+            msg = err.get("message") or "获取公众号信息失败"
+            reason = err.get("reason")
+            return error_response(code=50001, message=f"{msg}: {reason}" if reason else msg, data=env)
+
+        return success_response(env.get("data"))
     except Exception as e:
         print(f"获取公众号详情错误: {str(e)}")
         return error_response(code=50001, message=f"获取公众号信息失败: {str(e)}")

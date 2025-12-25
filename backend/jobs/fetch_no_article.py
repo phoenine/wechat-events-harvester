@@ -3,7 +3,8 @@ from time import sleep
 import random
 
 from core.print import print_success, print_error, print_warning
-from driver.wxarticle import Web
+from core.config import cfg
+from driver.wx_service import fetch_article as wx_fetch_article
 from core.repositories import article_repo
 from core.models import DataStatus as DATA_STATUS
 
@@ -33,8 +34,16 @@ def fetch_articles_without_content():
 
             # 获取内容（同步方式）
             if cfg.get("gather.content_mode", "web"):
-                content_data = Web.get_article_content(url)
-                content = (content_data or {}).get("content")
+                env = wx_fetch_article(url)
+                if env.get("ok"):
+                    content_data = env.get("data") or {}
+                    content = (content_data or {}).get("content")
+                else:
+                    err = env.get("error") or {}
+                    print_error(
+                        f"抓取文章失败: code={err.get('code')} reason={err.get('reason') or err.get('message')}"
+                    )
+                    content = None
             else:
                 content = ga.content_extract(url)
 
@@ -56,7 +65,8 @@ def fetch_articles_without_content():
     except Exception as e:
         print(f"处理过程中发生错误: {e}")
     finally:
-        Web.Close()
+        # wx_service.fetch_article 内部会自行管理抓取器的浏览器生命周期，这里无需额外 Close
+        pass
 
 
 from core.task import TaskScheduler
@@ -65,7 +75,6 @@ from core.utils import TaskQueue
 scheduler = TaskScheduler()
 task_queue = TaskQueue
 task_queue.run_task_background()
-from core.config import cfg
 
 
 def start_sync_content():

@@ -1,12 +1,9 @@
 import requests
 import json
 import re
-from driver.wx import DoSuccess
 from .cfg import cfg, wx_cfg
 from core.print import print_error, print_info
 from core.rss import RSS
-from driver.success import setStatus
-from driver.wxarticle import Web
 import random
 
 # 定义一些常见的 User-Agent
@@ -126,7 +123,6 @@ class WxGather:
     def FillBack(self, CallBack=None, data=None, Ext_Data=None):
         if CallBack is not None:
             if data is not None:
-                setStatus(True)
                 from datetime import datetime
 
                 art = {
@@ -234,9 +230,17 @@ class WxGather:
             import threading
             from core.async_queue import TaskQueue
             from core.print import print_error
-            from driver.success import setStatus
 
-            setStatus(False)
+            # 迁移：不再使用 legacy success.py 的全局布尔状态；
+            # 统一将 Playwright 登录状态标记为过期。
+            from driver.wx import WX_API
+            from driver.state import LoginState
+
+            try:
+                WX_API._set_state(LoginState.EXPIRED, error="Invalid Session")
+            except Exception:
+                pass
+
             TaskQueue.delete_queue()
 
             # 异步触发扫码通知，避免阻塞当前线程
@@ -307,6 +311,32 @@ class WxGather:
 
         return processed_content
 
+    def _clean_article_content(self, html_content: str) -> str:
+        """轻量清洗 HTML（替代对 driver.wx_article.Web.clean_article_content 的依赖）。
+
+        目标：
+        - 移除 head/script/style/link/meta 等常见非正文元素，减少后续正则误伤。
+        - 仅做 best-effort 处理；失败则返回原文。
+
+        说明：
+        - 这里不引入 Playwright/driver 依赖，避免核心采集流程与 driver 层耦合。
+        """
+        if not html_content:
+            return html_content
+
+        try:
+            # 先移除 head 整段（包含 meta/link/script/style 等）
+            cleaned = re.sub(r"<head[^>]*>.*?</head>", "", html_content, flags=re.DOTALL | re.IGNORECASE)
+
+            # 再移除常见无关标签
+            cleaned = re.sub(r"<script[^>]*>.*?</script>", "", cleaned, flags=re.DOTALL | re.IGNORECASE)
+            cleaned = re.sub(r"<style[^>]*>.*?</style>", "", cleaned, flags=re.DOTALL | re.IGNORECASE)
+            cleaned = re.sub(r"<link[^>]*?>", "", cleaned, flags=re.DOTALL | re.IGNORECASE)
+            cleaned = re.sub(r"<meta[^>]*?>", "", cleaned, flags=re.DOTALL | re.IGNORECASE)
+            return cleaned
+        except Exception:
+            return html_content
+
     def remove_common_html_elements(self, html_content: str) -> str:
         """
         移除常见的HTML元素区域
@@ -343,7 +373,7 @@ class WxGather:
             # 移除aside区域
             r"<aside[^>]*>.*?</aside>",
         ]
-        html_content = Web.clean_article_content(html_content)
+        html_content = self._clean_article_content(html_content)
         return self.remove_html_region(html_content, common_patterns)
 
     # 更新公众号更新状态

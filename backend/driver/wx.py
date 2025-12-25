@@ -1,102 +1,231 @@
 import os
-import re
 import time
-import sys
-import threading
 import asyncio
-from threading import Timer, Lock
+import traceback
+from typing import Any, Callable, Optional, TypedDict
+from threading import Lock
+
 from driver.playwright_driver import PlaywrightController
-from driver.success import Success
-from driver.success import getStatus
-from driver.store import Store
-from driver.cookies import expire
+from driver.state import LoginState
+from driver.lock import LOGIN_MUTEX, LockManager, LOCK_TTL_SECONDS
+from driver.refresh import RefreshManager
+from driver.session import SessionManager
+from driver.wx_schemas import WxMpSession
 from core.print import print_error, print_warning, print_info, print_success
 
 
-# 进程内登录互斥，防止并发登录/重复扫码
-LOGIN_MUTEX = threading.Lock()
+# ==================== Hooks 类型定义 ====================
+
+
+class WxHooks(TypedDict, total=False):
+    """wx.py 外部依赖钩子（可插拔）。
+
+    说明：
+    - wx.py 作为核心驱动，应尽量避免直接依赖外部基础设施（DB/Storage）。
+    - 通过 hooks 将这些 best-effort 行为变为可插拔回调：
+      - 生产由 wx_service 注入
+      - 测试/本地可不注入（走默认降级路径）
+
+    约定：
+    - hooks 任何异常都应被吞掉，不影响主流程。
+    """
+
+    # 状态变化通知：可用于写 DB / 观测上报等
+    on_state_change: Callable[[str, Optional[str], Optional[str], Optional[int]], None]
+
+    # 上传二维码：输入二维码 bytes，返回可访问 URL（signed_url/公开URL均可）
+    upload_qr_image: Callable[[bytes], Optional[str]]
 
 
 class Wx:
-    HasLogin = False
-    SESSION = None
-    HasCode = False
-    isLOCK = False
-    WX_LOGIN = "https://mp.weixin.qq.com/"
-    WX_HOME = "https://mp.weixin.qq.com/cgi-bin/home"
-    wx_login_url = None
-    current_session_id = None
-    lock_file_path = "data/.lock"
-    CallBack = None
-    Notice = None
-    # 添加线程锁保护共享变量
-    _login_lock = Lock()
-
     def __init__(self):
-        self.lock_path = os.path.dirname(self.lock_file_path)
+        self.lock_file_path = "data/.lock"
+        self._lock = LockManager(self.lock_file_path, ttl_seconds=LOCK_TTL_SECONDS)
+
         self.refresh_interval = 3600 * 24
+        self.wait_time = 1
         self.controller = PlaywrightController()
-        if not os.path.exists(self.lock_path):
-            os.makedirs(self.lock_path)
+
+        # 实例状态（替代 class 变量）
+        self.HasLogin = False
+        # 当前会话（公众号后台 session），结构见 driver.wx_schemas.WxMpSession
+        self.SESSION: WxMpSession | None = None
+        # 兼容字段：二维码是否存在的“镜像值”，真实来源以 wx_login_url 为准
+        self.HasCode = False
+        self.isLOCK = False
+        self.WX_LOGIN = "https://mp.weixin.qq.com/"
+        self.WX_HOME = "https://mp.weixin.qq.com/cgi-bin/home"
+        self.wx_login_url: str | None = None
+        self.current_session_id: str | None = None
+        self.CallBack = None
+        self.Notice = None
+        self.state: LoginState = LoginState.IDLE
+        self.last_error: str | None = None
+
+        # 外部依赖钩子（DB/Storage 等）：默认不注入，走内部 best-effort 降级
+        self._hooks: Optional[WxHooks] = None
+
+        # 线程锁 + 刷新管理
+        self._login_lock = Lock()
+        self._refresh = RefreshManager(
+            refresh_interval=self.refresh_interval,
+            get_controller=lambda: self.controller,
+            is_logged_in=self.is_logged_in,
+            on_refresh_success=lambda: self.Call_Success(schedule_refresh=False),
+            on_expired=self._on_session_expired,
+            login_lock=self._login_lock,
+        )
+
+        # SessionManager for session/cookie/token persistence and login-status sync
+        self._session = SessionManager(
+            get_controller=lambda: self.controller,
+            get_qr_url=lambda: self.wx_login_url,
+            set_logged_in=lambda v: setattr(self, "HasLogin", v),
+            get_logged_in=lambda: bool(self.HasLogin),
+            login_lock=self._login_lock,
+        )
+
+        # owner 信息移交 LockManager
+
         self.Clean()
-        self.release_lock()
-        pass
+
+    def _set_qr_url(self, url: str | None):
+        """设置二维码 URL，并同步兼容字段 HasCode（单一真相：wx_login_url）。"""
+        with self._login_lock:
+            self.wx_login_url = url
+            self.HasCode = bool(url)
+
+    def set_hooks(self, hooks: Optional[WxHooks]) -> None:
+        """注入/更新外部 hooks。
+
+        - 由上层（例如 wx_service）注入，实现 DB 写入、二维码上传等外部能力下沉。
+        - 不注入时，wx.py 会使用内部 best-effort 降级逻辑（保持当前行为）。
+        """
+        self._hooks = hooks
+
+    def _emit_state_change_hook(
+        self,
+        *,
+        state: LoginState,
+        error: str | None,
+        qr_signed_url: str | None,
+        expires_minutes: int | None,
+    ) -> None:
+        """触发状态变化 hook（best-effort）。
+
+        优先：如果注入了 hooks.on_state_change，则使用之；
+        否则：直接跳过（由 wx_service 负责注入外部能力）。
+        """
+        # 1) 外部注入优先
+        try:
+            hooks = self._hooks or {}
+            cb = hooks.get("on_state_change")
+            if cb is not None:
+                cb(state.value, qr_signed_url, error, expires_minutes)
+                return
+        except Exception:
+            # hook 异常不得影响主流程
+            return
+
+        # 2) 未注入 hook：直接跳过（wx.py 不再直接依赖外部 DB）。
+        return
+
+    def _upload_qr_hook(self, img_bytes: bytes) -> Optional[str]:
+        """上传二维码 hook（best-effort）。
+
+        优先：如果注入了 hooks.upload_qr_image，则使用之；
+        否则：直接跳过（由 wx_service 负责注入外部能力）。
+
+        Returns:
+            url: 上传后的可访问 URL（可能为 signed url）。失败返回 None。
+        """
+        # 1) 外部注入优先
+        try:
+            hooks = self._hooks or {}
+            cb = hooks.get("upload_qr_image")
+            if cb is not None:
+                return cb(img_bytes)
+        except Exception:
+            return None
+
+        # 2) 未注入 hook：直接跳过（wx.py 不再直接依赖外部 Storage）。
+        return None
 
     def GetHasCode(self):
+        # 单一真相：wx_login_url；HasCode 仅为兼容镜像
         return bool(self.wx_login_url)
 
     def extract_token_from_requests(self):
-        """从页面中提取token"""
-        try:
-            page = self.controller.page
-            # 尝试从当前URL获取token
-            current_url = page.url
-            token_match = re.search(r"token=([^&]+)", current_url)
-            if token_match:
-                return token_match.group(1)
+        """历史遗留接口：token 已下线。
 
-            # 尝试从localStorage获取
-            token = page.evaluate("() => localStorage.getItem('token')")
-            if token:
-                return token
+        说明：公众号会话以 cookies 为唯一依据；此方法仅为兼容旧调用点保留。
+        """
+        return None
 
-            # 尝试从sessionStorage获取
-            token = page.evaluate("() => sessionStorage.getItem('token')")
-            if token:
-                return token
-
-            # 尝试从cookie获取
-            cookies = page.context.cookies()
-            for cookie in cookies:
-                if "token" in cookie["name"].lower():
-                    return cookie["value"]
-
-            return None
-        except Exception as e:
-            print(f"提取token时出错: {str(e)}")
-            return None
+    def format_token(self, cookies: Any, token: str = "") -> WxMpSession:
+        """兼容旧接口：将 cookies 格式化为 session dict（token 已下线）。"""
+        return self._session.format_session(cookies)
 
     def GetCode(self, CallBack=None, Notice=None):
         self.Notice = Notice
-        if self.check_lock():
-            print_warning("微信公众平台登录脚本正在运行，请勿重复运行")
+        self._set_state(LoginState.STARTING)
+
+        # Phase B: fast-path 统一收口
+        fast = self._code_fastpath_if_logged_in()
+        if fast is not None:
+            return fast
+
+        # Phase0: 封死并发窗口——在启动线程前抢占进程内互斥与跨进程锁
+        acquired = LOGIN_MUTEX.acquire(blocking=False)
+        if not acquired:
+            print_warning("已有登录任务在进行中，跳过本次调用")
+            self._set_state(LoginState.WAIT_SCAN)
             return {
                 "code": self.wx_login_url,
-                "msg": "微信公众平台登录脚本正在运行，请勿重复运行！",
+                "is_exists": self.GetHasCode(),
+                "msg": "已有登录任务在进行中",
+            }
+
+        if not self.set_lock():
+            # 未获得跨进程锁，释放进程内互斥并返回
+            try:
+                LOGIN_MUTEX.release()
+            except Exception:
+                pass
+            print_warning("微信公众平台登录脚本正在运行，请勿重复运行")
+            self._set_state(LoginState.WAIT_SCAN)
+            return {
+                "code": self.wx_login_url,
+                "is_exists": self.GetHasCode(),
+                "msg": "微信公众平台登录任务正在运行",
             }
 
         self.Clean()
-        print("子线程执行中")
+        print_info("子线程执行中")
         from core.thread import ThreadManager
 
         self.thread = ThreadManager(
-            target=self.wxLogin, args=(CallBack, True)
-        )  # 传入函数名
-        self.thread.start()  # 启动线程
-        print("微信公众平台登录 v1.34")
-        return WX_API.QRcode()
+            target=self.wxLogin, args=(CallBack, True, True, True)
+        )  # args: (CallBack, NeedExit, prelocked, mutex_acquired)
+        try:
+            self.thread.start()  # 启动线程
+        except Exception as e:
+            # 若线程未能启动，必须回滚互斥与跨进程锁，避免锁遗留
+            print_warning(f"启动登录线程失败: {str(e)}")
+            self._set_state(LoginState.FAILED, error=str(e))
+            try:
+                LOGIN_MUTEX.release()
+            except Exception:
+                pass
+            self.release_lock()
+            return {
+                "code": self.wx_login_url,
+                "is_exists": self.GetHasCode(),
+                "msg": "启动登录线程失败",
+            }
 
-    wait_time = 1
+        print_info("微信公众平台登录 v1.34")
+        return self.QRcode()
 
     def QRcode(self):
         return {
@@ -104,94 +233,143 @@ class Wx:
             "is_exists": self.GetHasCode(),
         }
 
+    def _set_state(
+        self,
+        state: LoginState,
+        *,
+        error: str | None = None,
+        qr_signed_url: str | None = None,
+        expires_minutes: int | None = None,
+    ):
+        """Phase 2: 统一状态切换入口（内存 + DB best-effort）"""
+        with self._login_lock:
+            self.state = state
+            self.last_error = error
+        # 外部可插拔：状态变化上报（默认仍保持原有 DB best-effort 行为）
+        self._emit_state_change_hook(
+            state=state,
+            error=error,
+            qr_signed_url=qr_signed_url,
+            expires_minutes=expires_minutes,
+        )
+
+    def get_state(self) -> dict:
+        """对外可观测状态"""
+        with self._login_lock:
+            return {
+                "state": self.state.value,
+                "error": self.last_error,
+                "has_code": self.GetHasCode(),
+                "wx_login_url": self.wx_login_url,
+            }
+
+    def is_logged_in(self) -> bool:
+        """Canonical login check.
+
+        We treat `LoginState.SUCCESS` as the only logged-in terminal state.
+        Avoid using legacy `driver.success.getStatus`.
+        """
+        with self._login_lock:
+            return self.state == LoginState.SUCCESS
+
+    def _on_session_expired(self):
+        """会话失效统一处理：状态机 + 停止刷新 + 清理会话"""
+        self._set_state(LoginState.EXPIRED, error="登录已过期")
+        try:
+            self._refresh.stop()
+        except Exception:
+            pass
+        try:
+            self._session.clear()
+        except Exception:
+            pass
+
     def refresh_task(self):
         try:
-            page = self.controller.page
-            if not page:
-                print("页面刷新失败")
-                raise Exception("页面刷新失败")
-            page.reload()
-            self.Call_Success()
-            if "home" not in page.url:
-                print("检测到登录已过期，请重新登录")
-                raise Exception("登录已经失效，请重新登录")
-        except Exception:
-            raise Exception("浏览器关闭")
+            self._refresh.refresh_once()
+        except Exception as e:
+            # 保留原始异常信息，便于排障
+            raise Exception(f"浏览器关闭: {str(e)}")
 
     def schedule_refresh(self):
-        if self.refresh_interval <= 0:
-            return
+        # 兼容旧接口：启动定时刷新
+        self._refresh.start()
 
-        with self._login_lock:
-            if (
-                not self.HasLogin
-                or not hasattr(self, "controller")
-                or self.controller is None
-            ):
-                return
-
+    def _cancel_refresh_timer(self):
         try:
-            self.refresh_task()
-            # 使用守护线程避免资源泄露
-            timer = Timer(self.refresh_interval, self.schedule_refresh)
-            timer.daemon = True
-            timer.start()
-        except Exception as e:
-            print_error(f"定时刷新任务失败: {str(e)}")
-            # 不再抛出异常，避免无限循环
+            self._refresh.stop()
+        except Exception:
+            pass
 
     def Token(self, CallBack=None):
+        """尝试从持久化存储恢复公众号登录态（基于 Store/SessionManager）。
+
+        说明：
+        - 这是“免扫码复用会话”的入口：优先从 Store 读取 cookies 并注入浏览器。
+        - 若不存在可用会话，则回退为扫码登录流程。
+        """
         try:
             self.CallBack = CallBack
-            if not getStatus():
-                print_warning("未登录，请先扫码登录")
+
+            # 1) 从 Store/SessionManager 加载持久化会话
+            persisted = self._session.load_persisted_session()
+            # persisted: WxMpSession | None
+            if not persisted:
+                print_warning("未找到可用的持久化会话，请先扫码登录")
                 # 异步拉起二维码生成，不阻塞当前调用
                 self.GetCode(CallBack=CallBack, Notice=None)
                 return {
                     "need_login": True,
-                    "message": "未登录，请扫码登录后重试。",
+                    "message": "未找到可用的会话，请扫码登录后重试。",
                     "code": self.wx_login_url,
                     "is_exists": self.GetHasCode(),
                 }
 
-            from driver.token import wx_cfg
+            cookies = persisted.get("cookies") if persisted else None
 
-            token = str(wx_cfg.get("token", ""))
-            if not token:
-                print_warning("未找到有效的token")
-                return None
+            # 2) 启动浏览器并注入 cookies
             driver = self.controller
             driver.start_browser()
-            driver.open_url(f"{self.WX_HOME}?t=home/index&lang=zh_CN&token={token}")
 
-            cookie = Store.load()
-            if cookie:
-                # 为每个cookie添加必要的domain字段
-                for c in cookie:
-                    if "domain" not in c:
-                        c["domain"] = ".weixin.qq.com"
-                    if "path" not in c:
-                        c["path"] = "/"
-                driver.add_cookies(cookie)
-            # 为单个token cookie添加必要的字段
-            token_cookie = {
-                "name": "token",
-                "value": token,
-                "domain": ".weixin.qq.com",
-                "path": "/",
-            }
-            driver.add_cookie(token_cookie)
+            # cookies 优先使用 Playwright 列表格式；必要时做一次 normalize
+            cookie_list = self._session.normalize_cookie_list(cookies or [])
+            if cookie_list:
+                driver.add_cookies(cookie_list)
+
+            # 3) 打开主页验证会话（基于 cookies）
+            driver.open_url(self.WX_HOME)
+
             page = driver.page
-            qrcode = page.locator("#jumpUrl")
-            qrcode.wait_for(state="visible", timeout=self.wait_time * 1000)
-            qrcode.click()
-            time.sleep(2)
-            return self.Call_Success()
-        except ImportError as e:
-            print_error(f"导入模块失败: {str(e)}")
-            return None
+            if page is None:
+                print_error("页面未初始化，无法操作")
+                return None
+
+            # 若会话有效，通常能进入 home；否则会回到登录页
+            try:
+                page.wait_for_url(self.WX_HOME + "*", timeout=15_000)
+            except Exception:
+                # 尝试判断是否落在登录页（降级容错）
+                cur = ""
+                try:
+                    cur = page.url or ""
+                except Exception:
+                    cur = ""
+                if "mp.weixin.qq.com" in cur and "cgi-bin" not in cur:
+                    # 很可能回到了登录页
+                    print_warning("持久化会话已失效，需要重新扫码")
+                    self._set_state(LoginState.EXPIRED, error="持久化会话已失效")
+                    self.GetCode(CallBack=CallBack, Notice=None)
+                    return {
+                        "need_login": True,
+                        "message": "会话已过期，请扫码登录后重试。",
+                        "code": self.wx_login_url,
+                        "is_exists": self.GetHasCode(),
+                    }
+
+            # 4) 复用成功：走统一成功回调（会重新抓取 cookies 并持久化）
+            return self.Call_Success(schedule_refresh=False)
         except Exception as e:
-            print_error(f"Token操作失败: {str(e)}")
+            print_error(f"Token/会话复用失败: {str(e)}")
             return None
         finally:
             self.Close()
@@ -203,7 +381,173 @@ class Wx:
         except Exception:
             return False
 
-    def wxLogin(self, CallBack=None, NeedExit=False):
+    # Phase B: wxLogin 拆分为可维护的私有步骤（不改变行为，仅拆结构）
+    def _ensure_thread_event_loop(self):
+        """为登录线程准备 event loop（Playwright sync 底层依赖 asyncio）。"""
+        try:
+            _existing_loop = None
+            try:
+                _existing_loop = asyncio.get_event_loop()
+            except RuntimeError:
+                _existing_loop = None
+            if _existing_loop is None or _existing_loop.is_closed():
+                _new_loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(_new_loop)
+                print_info("为登录线程创建新的事件循环")
+        except Exception:
+            # 避免因事件循环异常阻断登录流程
+            pass
+
+    def _fastpath_if_logged_in(self, CallBack=None) -> WxMpSession | None:
+        """会话仍有效时的快速路径：复用现有会话并跳过登录流程。"""
+        if self.is_logged_in():
+            print_info("检测到会话仍有效，跳过登录流程")
+            self.CallBack = CallBack
+            return self.Call_Success()
+        return None
+
+    def _code_fastpath_if_logged_in(self):
+        """GetCode 的快速路径：会话仍有效时返回与 GetCode 一致的结构。"""
+        if not self.is_logged_in():
+            return None
+        print_info("检测到会话仍有效，无需重新扫码")
+        self._set_state(LoginState.SUCCESS)
+        return {
+            "code": self.wx_login_url,
+            "is_exists": self.GetHasCode(),
+            "msg": "会话仍有效",
+        }
+
+    def _acquire_login_guards(
+        self, *, prelocked: bool, mutex_acquired: bool
+    ) -> tuple[bool, bool, bool]:
+        """抢占进程内互斥 + 跨进程锁。
+
+        Returns:
+            guard_ok: 是否通过守卫（含跨进程锁）。失败时不应继续登录流程。
+            mutex_held_by_me: 是否需要在 finally 中释放 LOGIN_MUTEX。
+            lock_held_by_me: 是否需要在 finally 中释放跨进程锁文件。
+        """
+        mutex_held_by_me = False
+        lock_held_by_me = False
+
+        # Phase0: 若 GetCode 已预先抢占互斥，则这里不重复抢占
+        if mutex_acquired:
+            mutex_held_by_me = False
+        else:
+            if self.check_lock():
+                print_warning("微信公众平台登录脚本正在运行，请勿重复运行")
+                return (False, False, False)
+            mutex_held_by_me = LOGIN_MUTEX.acquire(blocking=False)
+            if not mutex_held_by_me:
+                print_warning("已有登录任务在进行中，跳过本次调用")
+                return (False, False, False)
+
+        if prelocked:
+            lock_held_by_me = False
+        else:
+            ok = self.set_lock()
+            lock_held_by_me = True if ok else False
+            if not ok:
+                print_warning("微信公众平台登录脚本正在运行，请勿重复运行")
+                return (False, mutex_held_by_me, False)
+
+        return (True, mutex_held_by_me, lock_held_by_me)
+
+    def _reset_login_flags(self):
+        """重置登录相关的实例标志。"""
+        with self._login_lock:
+            self.HasLogin = False
+        self._set_state(LoginState.STARTING)
+
+    def _start_browser_and_open_login(self):
+        """启动浏览器并打开登录页，返回 page。"""
+        driver = self.controller
+        print_info("正在启动浏览器...")
+        # 显式使用 firefox，避免系统 Chrome 依赖
+        for i in range(2):
+            try:
+                driver.start_browser(anti_crawler=False, browser_name="firefox")
+                break
+            except Exception as e:
+                if i == 1:
+                    raise
+                print_warning(f"浏览器启动失败，第{i+1}次重试: {e}")
+                try:
+                    driver.cleanup()
+                except Exception:
+                    pass
+                time.sleep(1.0)
+
+        driver.open_url(self.WX_LOGIN)
+        page = driver.page
+        if page is None:
+            print_error("页面未初始化，无法操作二维码")
+            raise Exception("页面未初始化，无法操作二维码")
+
+        print_info("正在加载登录页面...")
+        page.wait_for_load_state("domcontentloaded")
+        return page
+
+    def _capture_qr_screenshot(self, page):
+        """定位二维码并截图，返回 bytes。"""
+        qr_tag = ".login__type__container__scan__qrcode"
+        qrcode = page.wait_for_selector(qr_tag, state="visible", timeout=15000)
+        if qrcode is None:
+            raise Exception("未找到登录二维码元素")
+        img_bytes = qrcode.screenshot()
+        if not img_bytes or len(img_bytes) <= 364:
+            raise Exception("二维码图片获取失败，请重新扫码")
+        return img_bytes
+
+    def _upload_qr_if_possible(self, img_bytes: bytes):
+        """上传二维码（best-effort），并写入 qr_ready 状态。
+
+        说明：
+        - 优先使用外部注入 hooks.upload_qr_image。
+        - 未注入时：不会上传二维码，仅维持本地流程（wx_login_url 可能为空）。
+        """
+        url = self._upload_qr_hook(img_bytes)
+        if url:
+            self._set_qr_url(url)
+            self._set_state(
+                LoginState.QR_READY, qr_signed_url=self.wx_login_url, expires_minutes=2
+            )
+
+    def _wait_for_scan_and_login(self, page):
+        """等待扫码登录并跳转到首页。"""
+        self._set_state(LoginState.WAIT_SCAN)
+        print_info("等待扫码登录...")
+        if self.Notice is not None:
+            self.Notice()
+
+        page.wait_for_url(self.WX_HOME + "*", timeout=120000)
+        self._set_state(LoginState.SUCCESS)
+        print_info("登录成功, 正在获取cookie和token...")
+
+    def _close_event_loop_if_needed(self, NeedExit: bool):
+        """仅当需要退出且浏览器已清理时关闭该线程 event loop。"""
+        if not NeedExit:
+            return
+        try:
+            if not getattr(self.controller, "driver", None):
+                loop = None
+                try:
+                    loop = asyncio.get_event_loop()
+                except RuntimeError:
+                    loop = None
+                if loop and not loop.is_closed():
+                    loop.close()
+        except Exception:
+            pass
+
+    def wxLogin(
+        self,
+        CallBack=None,
+        NeedExit=False,
+        prelocked: bool = False,
+        mutex_acquired: bool = False,
+    ):
         """
         微信公众平台登录流程：
         1. 检查依赖和环境
@@ -215,189 +559,102 @@ class Wx:
         """
 
         # 使用上下文管理器确保资源清理
+
+        mutex_held_by_me = False
+        lock_held_by_me = False
         try:
-            # 为登录线程设置独立事件循环（Playwright sync 底层依赖 asyncio）
-            try:
-                _existing_loop = None
-                try:
-                    _existing_loop = asyncio.get_event_loop()
-                except RuntimeError:
-                    _existing_loop = None
-                if _existing_loop is None or _existing_loop.is_closed():
-                    _new_loop = asyncio.new_event_loop()
-                    asyncio.set_event_loop(_new_loop)
-                    print_info("为登录线程创建新的事件循环")
-            except Exception:
-                # 避免因事件循环异常阻断登录流程
-                pass
-            # 优先检查跨进程锁与会话有效性，避免无谓启动
-            if self.check_lock():
-                print_warning("微信公众平台登录脚本正在运行，请勿重复运行")
-                return None
-            if getStatus():
-                print_info("检测到会话仍有效，跳过登录流程")
-                self.CallBack = CallBack
-                return self.Call_Success()
+            self._ensure_thread_event_loop()
 
-            # 进程内互斥：避免并发登录任务（非阻塞获取，若已有登录则直接返回）
-            acquired = LOGIN_MUTEX.acquire(blocking=False)
-            if not acquired:
-                print_warning("已有登录任务在进行中，跳过本次调用")
+            # 快速路径：会话仍有效
+            fast = self._fastpath_if_logged_in(CallBack=CallBack)
+            if fast is not None:
+                return fast
+
+            guard_ok, mutex_held_by_me, lock_held_by_me = self._acquire_login_guards(
+                prelocked=prelocked, mutex_acquired=mutex_acquired
+            )
+            if not guard_ok:
+                # 未获得互斥/锁，直接退出
                 return None
 
-            self.set_lock()
-
-            with self._login_lock:
-                self.HasLogin = False
+            self._reset_login_flags()
 
             # 清理现有资源
             self.cleanup_resources()
 
-            # 初始化浏览器控制器
-            driver = self.controller
-            print_info("正在启动浏览器...")
-            # 显式使用 firefox，避免系统 Chrome 依赖
-            for i in range(2):
-                try:
-                    driver.start_browser(anti_crawler=False, browser_name="firefox")
-                    break
-                except Exception as e:
-                    if i == 1:
-                        raise
-                    print_warning(f"浏览器启动失败，第{i+1}次重试: {e}")
-                    try:
-                        driver.cleanup()
-                    except Exception:
-                        pass
-                    time.sleep(1.0)
-            driver.open_url(self.WX_LOGIN)
-            page = driver.page
+            page = self._start_browser_and_open_login()
 
-            print_info("正在加载登录页面...")
-            page.wait_for_load_state("domcontentloaded")
+            img_bytes = self._capture_qr_screenshot(page)
+            self._upload_qr_if_possible(img_bytes)
 
-            # 定位二维码区域并显式等待
-            qr_tag = ".login__type__container__scan__qrcode"
-            qrcode = page.wait_for_selector(qr_tag, state="visible", timeout=15000)
-            if qrcode is None:
-                raise Exception("未找到登录二维码元素")
+            # waiting 状态与二维码信息已由 _set_state(LoginState.QR_READY/WAIT_SCAN) 统一更新
+            self._wait_for_scan_and_login(page)
 
-            img_bytes = qrcode.screenshot()
-
-            # 使用 core.supabase 中预配置的 supabase_storage_qr，并在当前线程事件循环中同步执行异步上传
-            from core.supabase import supabase_storage_qr
-
-            if supabase_storage_qr.valid():
-                loop = asyncio.get_event_loop()
-                up = loop.run_until_complete(supabase_storage_qr.upload_qr(img_bytes))
-                self.wx_login_url = up["url"]
-                self.HasCode = True
-            try:
-                from core.supabase.database import db_manager
-                db_manager.update_session_sync(self.current_session_id, status="waiting", qr_signed_url=self.wx_login_url, expires_minutes=2)
-            except Exception:
-                pass
-            if not img_bytes or len(img_bytes) <= 364:
-                raise Exception("二维码图片获取失败，请重新扫码")
-            # 等待登录成功（检测二维码图片加载完成）
-            print("等待扫码登录...")
-            if self.Notice is not None:
-                self.Notice()
-
-            # 等待跳转到首页
-            page.wait_for_url(self.WX_HOME + "*", timeout=120000)
-            print("登录成功, 正在获取cookie和token...")
-
-            from .success import setStatus
-
-            with self._login_lock:
-                self.HasLogin = True
-            setStatus(True)
             self.CallBack = CallBack
             self.Call_Success()
+            # success 状态已由 _set_state(LoginState.SUCCESS) 统一更新
+        except Exception as e:
+            self._set_state(LoginState.FAILED, error=str(e))
+            print_error(f"登录流程异常: {str(e)}")
             try:
-                from core.supabase.database import db_manager
-                db_manager.update_session_sync(self.current_session_id, status="success")
+                print_error(traceback.format_exc())
             except Exception:
                 pass
-        except Exception as e:
-            print(f"\n错误发生: {str(e)}")
             self.SESSION = None
             return self.SESSION
         finally:
-            # 若本次需要退出且浏览器已清理，尝试关闭我们为该线程创建的事件循环以防资源泄露
-            if 'NeedExit' in locals() and NeedExit:
+            self._close_event_loop_if_needed(NeedExit)
+
+            # 释放进程内互斥锁（仅释放本函数自己 acquire 的互斥）
+            if mutex_held_by_me:
                 try:
-                    if not getattr(self.controller, 'driver', None):
-                        loop = None
-                        try:
-                            loop = asyncio.get_event_loop()
-                        except RuntimeError:
-                            loop = None
-                        if loop and not loop.is_closed():
-                            loop.close()
+                    LOGIN_MUTEX.release()
                 except Exception:
                     pass
-            # 释放进程内互斥锁
-            if 'acquired' in locals() and acquired:
-                LOGIN_MUTEX.release()
-            self.release_lock()
-            if "controller" in locals() and NeedExit:
+
+            if lock_held_by_me:
+                self.release_lock()
+
+            if NeedExit:
                 self.Clean()
-            else:
-                pass
         return self.SESSION
 
-    def format_token(self, cookies: any, token=""):
-        cookies_str = ""
-        for cookie in cookies:
-            cookies_str += f"{cookie['name']}={cookie['value']}; "
-            if "token" in cookie["name"].lower():
-                token = cookie["value"]
-        # 计算 slave_sid cookie 有效时间
-        cookie_expiry = expire(cookies)
-        return {
-            "cookies": cookies,
-            "cookies_str": cookies_str,
-            "token": token,
-            "wx_login_url": self.wx_login_url,
-            "expiry": cookie_expiry,
-        }
-
-    def Call_Success(self):
+    def Call_Success(self, schedule_refresh: bool = True) -> WxMpSession | None:
         """处理登录成功后的回调逻辑"""
-        if not hasattr(self, "controller") or self.controller is None:
-            print_error("浏览器控制器未初始化")
+        session, cookies, _token = self._session.build_from_controller()
+        # session: WxMpSession | None
+        if session is None:
             return None
 
-        # 获取token
-        token = self.extract_token_from_requests()
-
+        # 获取公众号扩展信息（失败不影响主流程）
         try:
-            # 使用更健壮的选择器定位元素
             self.ext_data = self._extract_wechat_data()
         except Exception as e:
             print_error(f"获取公众号信息失败: {str(e)}")
             self.ext_data = None
 
-        # 获取当前所有cookie
-        cookies = self.controller.get_cookies()
-        self.SESSION = self.format_token(cookies, token)
-        with self._login_lock:
-            self.HasLogin = False if self.SESSION["expiry"] is None else True
+        self.SESSION = session
+        logged_in = True if cookies else False
+        self._session.update_login_status(logged_in)
+        self._set_state(LoginState.SUCCESS if logged_in else LoginState.FAILED)
+
         self.Clean()
-        if self.HasLogin:
-            Store.save(cookies)
-            print_success("登录成功！")
-            # 启动一次定时刷新（守护线程，内部已处理异常）
+        if logged_in:
+            # 持久化会话（cookies 为唯一依据）
             try:
-                self.schedule_refresh()
+                self._session.save_persisted_session(session)
             except Exception:
                 pass
+            print_success("登录成功！")
+            # 启动一次定时刷新（守护线程，内部已处理异常）
+            if schedule_refresh:
+                try:
+                    self.schedule_refresh()
+                except Exception:
+                    pass
         else:
             print_warning("未登录！")
 
-        # print(cookie_expiry)
         if self.CallBack is not None:
             self.CallBack(self.SESSION, self.ext_data)
 
@@ -434,31 +691,70 @@ class Wx:
         """清理所有相关资源"""
         try:
             # 清理临时文件
+            self._cancel_refresh_timer()
             self.Clean()
 
-            # 重置状态
-            with self._login_lock:
-                self.HasLogin = False
-                self.HasCode = False
+            # 重置状态（统一走 SessionManager）
+            self._set_qr_url(None)
+            self._session.clear()
 
             print_info("资源清理完成")
             return True
         except Exception as e:
+            print_warning(f"资源清理失败: {str(e)}")
             return False
 
+    def reset_session(self, reason: str = "reset") -> None:
+        """重置公众号会话（仅清理运行时镜像，不触碰持久化 Store）。
+
+        设计目的：
+        - 为 wx_service 提供一个公开、稳定的“状态复位”入口，避免外部直接操作内部字段。
+        - 该方法只负责清理内存态与状态机；持久化清理由 SessionManager/Store 负责。
+        """
+        # 1) 清理运行时镜像
+        try:
+            self.SESSION = None
+        except Exception:
+            pass
+
+        try:
+            self.current_session_id = None
+        except Exception:
+            pass
+
+        try:
+            self.wx_login_url = None
+        except Exception:
+            pass
+
+        # 扩展信息（若存在）一并清理
+        try:
+            if hasattr(self, "ext_data"):
+                self.ext_data = None
+        except Exception:
+            pass
+
+        # 2) 状态复位（不做网络验证）
+        try:
+            if hasattr(self, "_set_state"):
+                self._set_state(LoginState.IDLE, error=reason)
+        except Exception:
+            pass
+
     def Close(self):
+        self._cancel_refresh_timer()
         rel = False
         try:
             if hasattr(self, "controller") and self.controller is not None:
                 self.controller.cleanup()
                 rel = True
         except Exception as e:
-            print("浏览器未启动")
-            # print(e)
+            print_warning(f"浏览器关闭/清理失败: {str(e)}")
             pass
         return rel
 
     def Clean(self):
+        """兼容保留：历史上用于清理临时状态；当前版本不再需要。"""
         return
 
     def expire_all_cookies(self):
@@ -468,39 +764,29 @@ class Wx:
                 self.controller.context.clear_cookies()
                 return True
             else:
-                print("浏览器未启动，无法操作cookie")
+                print_warning("浏览器未启动，无法操作cookie")
                 return False
         except Exception as e:
-            print(f"设置cookie过期时出错: {str(e)}")
+            print_error(f"设置cookie过期时出错: {str(e)}")
             return False
 
     def check_lock(self):
-        """检查锁定状态"""
-        return os.path.exists(self.lock_file_path)
+        """检查锁定状态：原子锁文件 + TTL + PID 校验"""
+        return self._lock.is_locked()
 
     def set_lock(self):
-        """创建锁定文件"""
-        with open(self.lock_file_path, "w") as f:
-            f.write(str(time.time()))
-        self.isLOCK = True
+        """创建锁定文件（原子创建），写入 pid,timestamp"""
+        ok = self._lock.try_acquire()
+        # 旧字段语义：是否持有锁；失败时保持 False，避免误判
+        self.isLOCK = True if ok else False
+        return ok
 
     def release_lock(self):
-        """删除锁定文件"""
-        try:
-            os.remove(self.lock_file_path)
+        """删除锁定文件（仅删除自己持有的锁，避免误删他人锁）"""
+        ok = self._lock.release()
+        if ok:
             self.isLOCK = False
-            return True
-        except:
-            return False
-
-
-def DoSuccess(cookies: any) -> dict:
-    data = WX_API.format_token(cookies)
-    Success(data)
+        return ok
 
 
 WX_API = Wx()
-
-
-def GetCode(CallBack: any = None, NeedExit=True):
-    WX_API.GetCode(CallBack)

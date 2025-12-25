@@ -15,9 +15,19 @@ class MpsWeb(WxGather):
 
     def content_extract(self, url):
         try:
-            from driver.wxarticle import Web as App
+            from driver.wx_service import fetch_article
 
-            r = App.get_article_content(url)
+            env = fetch_article(url)
+            if not env or not env.get("ok"):
+                # 失败时保持原行为：记录错误并返回空串
+                err = (env or {}).get("error") or {}
+                msg = err.get("message") or "fetch_article failed"
+                reason = err.get("reason")
+                logger.error(f"{msg}: {reason}" if reason else msg)
+                return ""
+
+            r = env.get("data") or {}
+            text = r.get("content", "")
             if r != None:
                 text = r.get("content", "")
                 text = self.remove_common_html_elements(text)

@@ -1,6 +1,6 @@
 from core.wx.model import *
 from core.wx.base import WxGather
-from driver.auth import *
+from driver.bootstrap_auth import *
 
 ga = WxGather()
 

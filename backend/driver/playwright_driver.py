@@ -1,30 +1,24 @@
 import os
 import platform
-from socket import timeout
-import subprocess
-import sys
 import json
 import random
 import uuid
-import asyncio
-from apis import user
 import threading
-
-# 指定浏览器类型
-browsers_name = os.getenv("BROWSER_TYPE", "firefox")
-browsers_path = os.getenv("PLAYWRIGHT_BROWSERS_PATH", "")
-# 只有在明确设置时才覆盖环境变量，避免写死路径
-if browsers_path:
-    os.environ["PLAYWRIGHT_BROWSERS_PATH"] = browsers_path
-
-# 进程级浏览器启动互斥，避免多个 Controller 并行拉起浏览器
-LAUNCH_MUTEX = threading.Lock()
-
-# 导入Playwright相关模块
 from playwright.sync_api import sync_playwright
 
 
+browsers_name = os.getenv("BROWSER_TYPE", "firefox")
+browsers_path = os.getenv("PLAYWRIGHT_BROWSERS_PATH", "")
+if browsers_path:
+    os.environ["PLAYWRIGHT_BROWSERS_PATH"] = browsers_path
+
+
+LAUNCH_MUTEX = threading.Lock()
+
+
 class PlaywrightController:
+    """Playwright浏览器控制器类"""
+
     def __init__(self):
         self.system = platform.system().lower()
         self.driver = None
@@ -32,11 +26,13 @@ class PlaywrightController:
         self.context = None
         self.page = None
         self.isClose = True
-        self._lock = threading.Lock()  # 添加线程锁
+        self._lock = threading.Lock()  # 实例级线程锁保护状态
 
     def _is_browser_installed(self, browser_name):
         """检查指定浏览器是否已安装"""
         try:
+            if not browsers_path:
+                return False
 
             # 遍历目录，查找包含浏览器名称的目录
             for item in os.listdir(browsers_path):
@@ -48,15 +44,6 @@ class PlaywrightController:
         except (OSError, PermissionError):
             return False
 
-    def is_async(self):
-        try:
-            # 尝试获取事件循环
-            loop = asyncio.get_running_loop()
-            return True
-        except RuntimeError:
-            # 如果没有正在运行的事件循环，则说明不是异步环境
-            return False
-
     def start_browser(
         self,
         headless=True,
@@ -66,10 +53,15 @@ class PlaywrightController:
         language="zh-CN",
         anti_crawler=True,
     ):
+        """启动浏览器并返回页面对象"""
         try:
             # 固定锁顺序：先进程级，再实例级，避免与 cleanup 竞争
             with LAUNCH_MUTEX:
                 with self._lock:
+                    # 若浏览器已启动且页面可用，直接复用，避免重复拉起
+                    if self.page is not None and self.isClose is False:
+                        return self.page
+
                     if bool(os.getenv("NOT_HEADLESS", False)):
                         headless = False
                     if self.driver is None:
@@ -77,26 +69,36 @@ class PlaywrightController:
 
                     browser_type = self.driver.firefox  # 统一使用 Firefox
 
-                    # 轻量重试 1 次（总计 2 次）
+                    # 轻量重试 1 次（总计 2 次），首次失败会完整清理并重建 driver
                     for i in range(2):
                         try:
                             self.browser = browser_type.launch(
                                 headless=headless,
-                                args=["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu"],
+                                args=[
+                                    "--no-sandbox",
+                                    "--disable-dev-shm-usage",
+                                    "--disable-gpu",
+                                ],
                             )
                             # 启动成功后创建上下文与页面（保持在同一把实例锁内，防止并发 cleanup）
                             context_options = {"locale": language}
                             if anti_crawler:
-                                context_options.update(self._get_anti_crawler_config(mobile_mode))
+                                context_options.update(
+                                    self._get_anti_crawler_config(mobile_mode)
+                                )
 
                             self.context = self.browser.new_context(**context_options)
                             self.page = self.context.new_page()
 
                             if mobile_mode:
-                                self.page.set_viewport_size({"width": 375, "height": 812})
+                                self.page.set_viewport_size(
+                                    {"width": 375, "height": 812}
+                                )
 
                             if dis_image:
-                                self.context.route("**/*.{png,jpg,jpeg}", lambda route: route.abort())
+                                self.context.route(
+                                    "**/*.{png,jpg,jpeg}", lambda route: route.abort()
+                                )
 
                             if anti_crawler:
                                 self._apply_anti_crawler_scripts()
@@ -118,6 +120,7 @@ class PlaywrightController:
             raise Exception(f"浏览器启动失败: {str(e)}")
 
     def string_to_json(self, json_string):
+        """将字符串解析为JSON对象"""
         try:
             json_obj = json.loads(json_string)
             return json_obj
@@ -126,6 +129,7 @@ class PlaywrightController:
             return ""
 
     def parse_string_to_dict(self, kv_str: str):
+        """将格式如 key=value;key2=value2 的字符串解析为字典"""
         result = {}
         items = kv_str.strip().split(";")
         for item in items:
@@ -137,20 +141,20 @@ class PlaywrightController:
         return result
 
     def add_cookies(self, cookies):
+        """添加多条Cookie"""
         if self.context is None:
             raise Exception("浏览器未启动，请先调用 start_browser()")
         self.context.add_cookies(cookies)
 
     def add_cookie(self, cookie):
+        """添加单条Cookie"""
         self.add_cookies([cookie])
 
     def _get_anti_crawler_config(self, mobile_mode=False):
-        """获取反爬虫配置"""
-
+        """获取反爬虫相关配置"""
         # 生成随机指纹
         fingerprint = self._generate_uuid()
 
-        # 基础配置
         config = {
             "user_agent": self._get_realistic_user_agent(mobile_mode),
             "viewport": {
@@ -171,7 +175,6 @@ class PlaywrightController:
             },
         }
 
-        # 移动端特殊配置
         if mobile_mode:
             config["extra_http_headers"].update(
                 {
@@ -183,10 +186,9 @@ class PlaywrightController:
         return config
 
     def _get_realistic_user_agent(self, mobile_mode=False):
-        """获取更真实的User-Agent"""
+        """获取更真实的User-Agent字符串"""
         print(f"浏览器特征设置完成: {'移动端' if mobile_mode else '桌面端'}")
         if mobile_mode:
-            # 移动端User-Agent
             mobile_agents = [
                 "Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1",
                 "Mozilla/5.0 (Linux; Android 10; SM-G973F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.120 Mobile Safari/537.36",
@@ -195,7 +197,6 @@ class PlaywrightController:
             ]
             return random.choice(mobile_agents)
         else:
-            # 桌面端User-Agent（更新版本）
             desktop_agents = [
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -212,22 +213,17 @@ class PlaywrightController:
         return str(uuid.uuid4()).replace("-", "")
 
     def _apply_anti_crawler_scripts(self):
-
+        """应用反爬虫脚本，尽量隐藏自动化特征"""
+        # 可选依赖：未安装时不自动 pip 安装，避免运行期修改环境导致不可控
         try:
             from playwright_stealth.stealth import Stealth
 
             stealth = Stealth()
             stealth.apply_stealth_sync(self.page)
-        except ImportError:
-            print("检测到playwright_stealth未安装，正在自动安装...")
-            subprocess.check_call(
-                [sys.executable, "-m", "pip", "install", "playwright_stealth"]
-            )
-            from playwright_stealth.stealth import Stealth
+        except Exception:
+            # 降级：仅使用下面的 init_script/evaluate 方案
+            pass
 
-            stealth = Stealth()
-            stealth.apply_stealth_sync(self.page)
-        """应用反爬虫脚本"""
         # 隐藏自动化特征
         self.page.add_init_script(
             """
@@ -249,11 +245,6 @@ class PlaywrightController:
         // 修改languages
         Object.defineProperty(navigator, 'languages', {
             get: () => ['zh-CN', 'zh', 'en'],
-        });
-
-        // 隐藏自动化痕迹
-        Object.defineProperty(navigator, 'webdriver', {
-            get: () => false,
         });
 
         // 修改permissions
@@ -291,28 +282,35 @@ class PlaywrightController:
         )
 
     def __del__(self):
-        # 避免在程序退出时调用Close()，防止"can't register atexit after shutdown"错误
+        """对象析构时尽量清理资源"""
         try:
-            import atexit
-
-            # 检查是否在atexit处理过程中
-            if not atexit._exithandlers:
-                self.Close()
-        except:
-            # 如果发生任何异常，直接跳过清理
+            if getattr(self, "isClose", True) is False:
+                self.cleanup()
+        except Exception:
             pass
 
     def open_url(self, url, wait_until="domcontentloaded"):
+        """打开指定URL"""
         try:
+            if self.page is None:
+                raise Exception("页面未初始化，请先调用 start_browser()")
             self.page.goto(url, wait_until=wait_until)
         except Exception as e:
             raise Exception(f"打开URL失败: {str(e)}")
 
     def Close(self):
+        """关闭浏览器"""
         self.cleanup()
 
     def _unsafe_cleanup_locked(self):
-        """在已持有 self._lock 的前提下清理资源，避免与 start_browser 竞争"""
+        """
+        在已持有实例级锁的前提下清理资源。
+
+        说明：
+        - 关闭page/context/browser/driver，置空相关字段。
+        - 捕获并吞掉所有异常，保证清理流程不中断。
+        - 标记isClose为True。
+        """
         try:
             if getattr(self, "page", None):
                 try:
@@ -344,16 +342,15 @@ class PlaywrightController:
             self.isClose = True
 
     def cleanup(self):
-        """清理所有资源（线程安全）"""
+        """清理所有资源，线程安全且可重入"""
         try:
             with self._lock:
                 self._unsafe_cleanup_locked()
         except Exception as e:
-            # 降噪：仅在调试需要时打印
-            # print(f"资源清理失败: {str(e)}")
             pass
 
     def dict_to_json(self, data_dict):
+        """将字典转换为格式化JSON字符串"""
         try:
             return json.dumps(data_dict, ensure_ascii=False, indent=2)
         except (TypeError, ValueError) as e:

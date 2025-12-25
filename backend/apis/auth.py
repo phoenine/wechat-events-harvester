@@ -9,11 +9,14 @@ from core.supabase.auth import (
 )
 from core.supabase.storage import SupabaseStorage
 from core.supabase.database import db_manager
-from driver.base import WX_API
-from driver.success import Success
+from driver.wx_service import get_qr_code as wx_get_qr_code, get_state as wx_get_state, logout as wx_logout
 
 
 router = APIRouter(prefix=f"/auth", tags=["认证"])
+
+# 兼容：原先把 session_id 写到 WX_API.current_session_id 上。
+# 现在改为由本模块自行保存，避免依赖 driver.base/WX_API 的内部字段。
+_WX_CURRENT_SESSION_ID: str | None = None
 
 
 def ApiSuccess(data):
@@ -32,8 +35,9 @@ async def get_qrcode(_current_user=Depends(get_current_user)):
     if db_manager.valid_session_db():
         user_id = _current_user.get("supabase_user_id") or None
         session_id = await db_manager.create_session(user_id=user_id, expires_minutes=2)
-        setattr(WX_API, "current_session_id", session_id)
-    code_url = WX_API.GetCode(Success)
+        global _WX_CURRENT_SESSION_ID
+        _WX_CURRENT_SESSION_ID = session_id
+    code_url = wx_get_qr_code(callback=ApiSuccess)
     if session_id:
         code_url.update({"session_id": session_id})
     return success_response(code_url)
@@ -41,25 +45,24 @@ async def get_qrcode(_current_user=Depends(get_current_user)):
 
 @router.get("/qr/image", summary="获取登录二维码图片")
 async def qr_image(_current_user=Depends(get_current_user)):
-    return success_response(WX_API.GetHasCode())
+    state = wx_get_state()
+    return success_response(state.get("has_code"))
 
 
 @router.get("/qr/url", summary="获取二维码完整访问地址")
 async def qr_url(_current_user=Depends(get_current_user)):
     sb = SupabaseStorage()
-    if not WX_API.GetHasCode():
+    state = wx_get_state()
+    if not state.get("has_code"):
         return success_response(
             {"image_url": None, "mode": "supabase" if sb.valid() else "local"}
         )
-    url = getattr(WX_API, "wx_login_url", None)
-    if (
-        url
-        and getattr(WX_API, "current_session_id", None)
-        and db_manager.valid_session_db()
-    ):
+    url = state.get("wx_login_url")
+    global _WX_CURRENT_SESSION_ID
+    if url and _WX_CURRENT_SESSION_ID and db_manager.valid_session_db():
         try:
             await db_manager.update_session(
-                getattr(WX_API, "current_session_id"),
+                _WX_CURRENT_SESSION_ID,
                 status="waiting",
                 qr_signed_url=url,
                 expires_minutes=2,
@@ -75,14 +78,14 @@ async def qr_url(_current_user=Depends(get_current_user)):
 async def qr_status(_current_user=Depends(get_current_user)):
     return success_response(
         {
-            "login_status": WX_API.HasLogin(),
+            "login_status": wx_get_state().get("state") == "success",
         }
     )
 
 
 @router.get("/qr/over", summary="扫码完成")
 async def qr_success(_current_user=Depends(get_current_user)):
-    return success_response(WX_API.Close())
+    return success_response(wx_logout(clear_persisted=False))
 
 
 @router.post("/login", summary="用户登录")
