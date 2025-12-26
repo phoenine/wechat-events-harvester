@@ -38,6 +38,25 @@ def _normalize_state_value(state: Any) -> str:
     except Exception:
         return "unknown"
 
+def _cookies_list_to_header(cookies: Any) -> str:
+    """将 driver session 中的 cookies(list[dict]) 转为 HTTP Cookie 头字符串（best-effort）。"""
+    if not cookies:
+        return ""
+    parts: list[str] = []
+    try:
+        for c in cookies:
+            if isinstance(c, dict):
+                name = c.get("name")
+                value = c.get("value")
+            else:
+                name = getattr(c, "name", None)
+                value = getattr(c, "value", None)
+            if name and value is not None:
+                parts.append(f"{name}={value}")
+    except Exception:
+        return ""
+    return "; ".join(parts)
+
 
 def _ok(*, data: Any = None, state: Optional[str] = None) -> WxEnvelope:
     return {"ok": True, "data": data, "error": None, "state": state}
@@ -344,16 +363,52 @@ class WxService:
         except Exception as e:
             return _map_exception_to_error(e, stage="session", state=LoginState.IDLE.value)
 
+
+    def get_cookie_header(self) -> WxEnvelope:
+        """返回用于 requests 的 Cookie header 字符串（唯一出口）。
+
+        - Cookie 来源：持久化会话（Store/SessionManager）
+        - 返回结构：WxEnvelope，data 为 cookie header 字符串
+        """
+        try:
+            sess = self._session.load_persisted_session()
+            if not isinstance(sess, dict):
+                return _fail(
+                    code="WX_NOT_LOGGED_IN",
+                    message="no persisted session",
+                    reason="no persisted session",
+                    retryable=True,
+                    stage="session",
+                    state=LoginState.IDLE.value,
+                )
+
+            cookie_header = _cookies_list_to_header(sess.get("cookies"))
+            if not cookie_header:
+                return _fail(
+                    code="WX_NOT_LOGGED_IN",
+                    message="no cookies",
+                    reason="no cookies",
+                    retryable=True,
+                    stage="session",
+                    state=LoginState.IDLE.value,
+                )
+
+            # 注意：这里 state 只是观测值；cookie header 有了并不等价于一定 SUCCESS
+            return _ok(data=cookie_header, state=LoginState.IDLE.value)
+        except Exception as e:
+            return _map_exception_to_error(e, stage="session", state=LoginState.IDLE.value)
+
+
+    def get_cookies_str(self) -> WxEnvelope:
+        """get_cookie_header 的别名。"""
+        return self.get_cookie_header()
+
+
     def login_with_token(
         self,
         callback: Optional[Callable[[Any, Any], None]] = None,
     ) -> WxEnvelope:
-        """从 Store/SessionManager 恢复公众号会话（免扫码，best-effort）。
-
-        返回结构为 WxEnvelope，data 字段携带 WxSessionInfo 形状。
-        名称为兼容旧调用方，实际行为为调用 WX_API.Token() 以尝试从持久化存储恢复登录态。
-        若恢复失败则自动回退扫码登录流程。
-        """
+        """从 Store/SessionManager 恢复公众号会话"""
         print_info("公众号会话恢复：尝试从 Store/SessionManager 复用登录态")
 
         try:
@@ -520,6 +575,13 @@ def wait_until_finished(timeout_seconds: int = 120, poll_interval: float = 0.8) 
 
 def get_session_info() -> WxEnvelope:
     return _get_service().get_session_info()
+
+
+def get_cookie_header() -> WxEnvelope:
+    return _get_service().get_cookie_header()
+
+def get_cookies_str() -> WxEnvelope:
+    return _get_service().get_cookies_str()
 
 
 def login_with_token(callback: Optional[Callable[[Any, Any], None]] = None) -> WxEnvelope:

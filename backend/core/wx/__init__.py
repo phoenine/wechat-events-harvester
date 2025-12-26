@@ -1,13 +1,14 @@
-from core.wx.model import *
 from core.wx.base import WxGather
-from driver.bootstrap_auth import *
+from core.wx.modes.api import MpsApi
+from core.wx.modes.app import MpsAppMsg
+from core.wx.modes.web import MpsWeb
 
-ga = WxGather()
-
-
-def search_Biz(kw: str = "", limit=5, offset=0):
-    return ga.search_Biz(kw, limit, offset)
-
+__all__ = [
+    "WxGather",
+    "MpsApi",
+    "MpsAppMsg",
+    "MpsWeb",
+]
 
 if __name__ == "__main__":
     pass

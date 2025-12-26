@@ -358,4 +358,22 @@ class PlaywrightController:
             return ""
 
 
+
+def get_realistic_user_agent(mobile_mode: bool = False) -> str:
+    """Public UA helper.
+
+    目的：
+    - 对外提供稳定的 User-Agent 生成接口。
+    - 避免其他模块跨层调用私有方法 `_get_realistic_user_agent`。
+
+    注意：
+    - 该函数应当是纯函数（无 I/O、无副作用）。
+    """
+    try:
+        return PlaywrightController()._get_realistic_user_agent(mobile_mode=mobile_mode)
+    except Exception:
+        # 最小兜底，避免调用方因 UA 生成异常而失败
+        return "Mozilla/5.0"
+
+
 ControlDriver = PlaywrightController()
