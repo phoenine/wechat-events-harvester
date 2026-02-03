@@ -5,7 +5,7 @@ import os
 import hashlib
 import time
 import json
-from core.config import cfg
+from core.common.config import cfg
 
 CACHE_DIR = cfg.get("cache.dir", "data/cache")
 CACHE_TTL = 3600  # 缓存过期时间1小时

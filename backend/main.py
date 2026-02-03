@@ -5,8 +5,8 @@ import uvicorn
 from dotenv import load_dotenv
 load_dotenv()
 
-from core.config import cfg
-from core.print import print_warning
+from core.common.config import cfg
+from core.common.print import print_warning
 
 
 if __name__ == "__main__":

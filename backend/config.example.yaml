@@ -46,26 +46,6 @@ debug: ${DEBUG:-False}
 #最大页数 第一次添加 采集的页数默认5页
 max_page: ${MAX_PAGE:-5}
 
-rss:
-  #RSS域名地址：如https://www.xxx.com/
-  base_url: ${RSS_BASE_URL:-}
-  #是否为本地RSS链接，默认True，当为False时直接出外部链接
-  local: ${RSS_LOCAL:-False}
-  #RSS标题
-  title: ${RSS_TITLE:-}
-  #RSS描述
-  description: ${RSS_DESCRIPTION:-}
-  #RSS封面
-  cover: ${RSS_COVER:-}
-  #是否显示全文 默认False
-  full_context: ${RSS_FULL_CONTEXT:-True}
-  #是否添加封面图片 默认False
-  add_cover: ${RSS_ADD_COVER:-True}
-  #RSS正文是否启用 CDATA
-  cdata: ${RSS_CDATA:-False}
-  #RSS分页大小 默认10
-  page_size: ${RSS_PAGE_SIZE:-30}
-
 #登录会话有效时长 单位分钟 默认4320分钟 3天
 token_expire_minutes: ${TOKEN_EXPIRE_MINUTES:-4320}
 
@@ -99,14 +79,3 @@ log:
   file: ${LOG_FILE:-}
   #日志级别，默认为INFO，可选DEBUG, INFO, WARNING, ERROR, CRITICAL
   level: ${LOG_LEVEL:-INFO}
-export:
-  pdf:
-    #是否启用PDF导出功能 默认False
-    enable: ${EXPORT_PDF:-False}
-    #PDF导出目录 默认./data/pdf
-    dir: ${EXPORT_PDF_DIR:-./data/pdf}
-  markdown:
-    #是否启用markdown导出功能 默认False
-    enable: ${EXPORT_MARKDOWN:-False}
-    #markdown导出目录 默认./data/markdown
-    dir: ${EXPORT_MARKDOWN_DIR:-./data/markdown}

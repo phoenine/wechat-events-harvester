@@ -2,14 +2,14 @@ import json
 from typing import Optional, List, Any
 
 from jobs.article import UpdateArticle, Update_Over
-from core.repositories import feed_repo
-from core.wx import WxGather
-from core.log import logger
-from core.task import TaskScheduler
-from core.config import cfg
-from core.print import print_success, print_error, print_warning
-from core.utils import TaskQueue
-from core.models import MessageTask
+from core.feeds import feed_repo
+from core.integrations.wx import WxGather
+from core.common.log import logger
+from core.common.task import TaskScheduler
+from core.common.config import cfg
+from core.common.print import print_success, print_error, print_warning
+from core.common.utils import TaskQueue
+from core.message_tasks.model import MessageTask
 from jobs.webhook import web_hook
 
 # 每隔多少秒执行一次，配置缺失或异常时回退到 60 秒

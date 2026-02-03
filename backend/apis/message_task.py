@@ -1,11 +1,11 @@
 import uuid
 from datetime import datetime
 from typing import List, Optional
-from core.print import print_error, print_info
+from core.common.print import print_error, print_info
 from fastapi import APIRouter, Depends, HTTPException, status, Body, Query
-from core.supabase.auth import get_current_user
-from core.repositories import message_repo
-from schemas import success_response, error_response, MessageTaskCreate
+from core.integrations.supabase.auth import get_current_user
+from core.message_tasks import message_repo
+from models import success_response, error_response, MessageTaskCreate
 
 
 router = APIRouter(prefix="/message_tasks", tags=["消息任务"])

@@ -13,15 +13,15 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse
 from fastapi.background import BackgroundTasks
-from core.supabase.auth import get_current_user
-from core.repositories import feed_repo
-from core.wx import search_Biz
-from schemas import success_response, error_response
-from core.config import cfg
-from core.res import save_avatar_locally
+from core.integrations.supabase.auth import get_current_user
+from core.feeds import feed_repo
+from core.integrations.wx import search_Biz
+from models import success_response, error_response
+from core.common.config import cfg
+from core.common.res import save_avatar_locally
 from jobs.article import UpdateArticle
-from core.utils import TaskQueue
-from core.wx import WxGather
+from core.common.utils import TaskQueue
+from core.integrations.wx import WxGather
 
 
 router = APIRouter(prefix=f"/mps", tags=["公众号管理"])
@@ -124,7 +124,7 @@ async def update_mps(
         result = []
 
         def UpArt(mp_data):
-            from core.wx import WxGather
+            from core.integrations.wx import WxGather
             from core.print import print_error
 
             try:
@@ -182,7 +182,7 @@ async def get_mp_by_article(
     url: str = Query(..., min_length=1), _current_user: dict = Depends(get_current_user)
 ):
     try:
-        from driver.wx_service import fetch_article
+        from driver.wx.service import fetch_article
         import asyncio
 
         # 在后台线程中执行同步的 Playwright 调用，避免在事件循环里直接使用 Sync API

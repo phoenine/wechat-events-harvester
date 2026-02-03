@@ -3,12 +3,12 @@ import time
 import sys
 from fastapi import APIRouter, Depends
 from typing import Dict, Any
-from core.supabase.auth import get_current_user
-from schemas import success_response, error_response, API_VERSION
-from core.config import cfg
+from core.integrations.supabase.auth import get_current_user
+from models import success_response, error_response, API_VERSION
+from core.common.config import cfg
 from jobs.mps import TaskQueue
-from driver.wx_service import get_state as wx_get_state, get_session_info as wx_get_session_info
-from driver.state import LoginState
+from driver.wx.service import get_state as wx_get_state, get_session_info as wx_get_session_info
+from driver.wx.state import LoginState
 
 
 router = APIRouter(prefix="/sys", tags=["系统信息"])
@@ -20,7 +20,7 @@ _START_TIME = time.time()
 @router.get("/base_info", summary="常规信息")
 async def get_base_info() -> Dict[str, Any]:
     try:
-        from core.config import VERSION as CORE_VERSION, LATEST_VERSION
+        from core.common.base import VERSION as CORE_VERSION, LATEST_VERSION
 
         base_info = {
             "api_version": API_VERSION,
@@ -35,7 +35,7 @@ async def get_base_info() -> Dict[str, Any]:
         return error_response(code=50001, message=f"获取信息失败: {str(e)}")
 
 
-from core.resource import get_system_resources
+from core.common.resource import get_system_resources
 
 
 @router.get("/resources", summary="获取系统资源使用情况")
@@ -59,7 +59,7 @@ async def system_resources(
 
 
 from core.article_lax import laxArticle
-from schemas import API_VERSION
+from models import API_VERSION
 from core.base import VERSION as CORE_VERSION, LATEST_VERSION
 
 # TODO : 后面优化这个接口，改成异步的

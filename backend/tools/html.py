@@ -1,4 +1,4 @@
-from core.print import print_error, print_info, print_warning
+from core.common.print import print_error, print_info, print_warning
 
 
 class HtmlTools:
@@ -65,17 +65,7 @@ class HtmlTools:
         return cleaned_content
 
     def remove_elements_by_attributes(self, html_content: str, attributes: list) -> str:
-        """根据属性移除HTML元素
-
-        Args:
-            html_content: 原始HTML内容
-            attributes: 属性列表，格式为 [{'name': 'attr_name', 'value': 'attr_value'}] 或 [{'name': 'attr_name'}]
-                       如果只提供name，则移除所有包含该属性的元素
-                       如果同时提供name和value，则移除属性值匹配的元素
-
-        Returns:
-            清理后的HTML内容
-        """
+        """根据属性移除HTML元素"""
         try:
             if not html_content or not attributes:
                 return html_content
@@ -84,7 +74,7 @@ class HtmlTools:
             try:
                 from bs4 import BeautifulSoup
             except ImportError:
-                print_error("BeautifulSoup未安装，无法进行属性过滤")
+                print_error("BeautifulSoup未安装, 无法进行属性过滤")
                 return html_content
 
             soup = BeautifulSoup(html_content, "html.parser")

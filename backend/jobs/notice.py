@@ -1,9 +1,9 @@
-from core.config import cfg
+from core.common.config import cfg
 import time
 
 
 def sys_notice(text: str = "", title: str = "", tag: str = "系统通知", type=""):
-    from core.notice import notice
+    from core.integrations.notice import notice
 
     markdown_text = f"### {title} {type} {tag}\n{text}"
     webhook = cfg.get("notice")["dingding"]

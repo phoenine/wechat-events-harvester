@@ -13,10 +13,11 @@ from fastapi import (
 )
 from typing import Optional, Dict, Any
 from datetime import datetime, timedelta, timezone
-from core.supabase.auth import get_current_user
-from core.repositories import article_repo, event_repo
-from schemas import success_response, error_response, EventCreate, EventUpdate
-from core.log import logger
+from core.integrations.supabase.auth import get_current_user
+from core.articles import article_repo
+from core.events import event_repo
+from models import success_response, error_response, EventCreate, EventUpdate
+from core.common.log import logger
 
 
 router = APIRouter(prefix="/events", tags=["活动"])

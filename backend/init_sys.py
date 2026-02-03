@@ -4,8 +4,8 @@ import os
 from dotenv import load_dotenv
 load_dotenv()
 
-from core.supabase.auth import auth_manager
-from core.print import print_info, print_error
+from core.integrations.supabase.auth import auth_manager
+from core.common.print import print_info, print_error
 
 
 async def init_user():

@@ -1,10 +1,10 @@
 import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from datetime import datetime, timezone
-from core.repositories import tag_repo
-from schemas import success_response, error_response, TagsCreate
-from core.supabase.auth import get_current_user
-from core.print import print_error
+from core.tags import tag_repo
+from models import success_response, error_response, TagsCreate
+from core.integrations.supabase.auth import get_current_user
+from core.common.print import print_error
 
 
 router = APIRouter(prefix="/tags", tags=["标签管理"])

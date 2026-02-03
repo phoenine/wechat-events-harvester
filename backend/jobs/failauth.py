@@ -1,6 +1,6 @@
-from core.config import cfg
+from core.common.config import cfg
 from jobs.notice import sys_notice
-from driver.wx_service import get_qr_code, get_state
+from driver.wx.service import get_qr_code, get_state
 import time
 
 
@@ -19,8 +19,7 @@ def CallBackNotice():
         <rect x="10" y="10" width="180" height="180" fill="#ffcc00" stroke="#000" stroke-width="2"/>
         </svg>
         """
-    rss_domain = cfg.get("rss.base_url", "")
-    url = rss_domain + str(url)
+    url = str(url)
     text = f"- 服务名：{cfg.get('server.name','')}\n"
     text += (
         f"- 发送时间： {time.strftime('%Y-%m-%d %H:%M:%S',time.localtime(time.time()))}"

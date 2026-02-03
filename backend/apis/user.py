@@ -2,10 +2,10 @@ import os
 from typing import Dict, Any
 from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
-from schemas import success_response, error_response
-from core.supabase.auth import get_current_user
-from core.repositories import profile_repo
-from core.supabase.storage import supabase_storage_avatar
+from models import success_response, error_response
+from core.integrations.supabase.auth import get_current_user
+from core.profiles import profile_repo
+from core.integrations.supabase.storage import supabase_storage_avatar
 
 
 router = APIRouter(prefix="/user", tags=["用户资料"])

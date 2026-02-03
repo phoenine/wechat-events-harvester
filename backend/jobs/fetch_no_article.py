@@ -1,12 +1,12 @@
-from core.wx.base import WxGather
+from core.integrations.wx import WxGather
 from time import sleep
 import random
 
-from core.print import print_success, print_error, print_warning
-from core.config import cfg
-from driver.wx_service import fetch_article as wx_fetch_article
-from core.repositories import article_repo
-from core.models import DataStatus as DATA_STATUS
+from core.common.print import print_success, print_error, print_warning
+from core.common.config import cfg
+from driver.wx.service import fetch_article as wx_fetch_article
+from core.articles import article_repo
+from core.common.status import DataStatus as DATA_STATUS
 
 
 def fetch_articles_without_content():
@@ -69,8 +69,8 @@ def fetch_articles_without_content():
         pass
 
 
-from core.task import TaskScheduler
-from core.utils import TaskQueue
+from core.common.task import TaskScheduler
+from core.common.utils import TaskQueue
 
 scheduler = TaskScheduler()
 task_queue = TaskQueue

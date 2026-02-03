@@ -1,4 +1,4 @@
-from core.supabase.database import sync_get_articles, sync_delete_article
+from core.integrations.supabase.database import sync_get_articles, sync_delete_article
 
 
 def clean_duplicate_articles():

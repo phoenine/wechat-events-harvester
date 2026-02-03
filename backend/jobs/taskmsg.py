@@ -1,5 +1,5 @@
 from typing import Union, Optional, Dict, List
-from core.repositories import message_repo
+from core.message_tasks import message_repo
 
 
 def get_message_task(job_id: Union[str, list] = None) -> Optional[List[Dict]]:

@@ -1,15 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
-from schemas import success_response, error_response
-from core.config import set_config, cfg
-from core.supabase.auth import (
+from models import success_response, error_response
+from core.common.config import set_config, cfg
+from core.integrations.supabase.auth import (
     get_current_user,
     authenticate_user_credentials,
     UserCredentials,
 )
-from core.supabase.storage import SupabaseStorage
-from core.supabase.database import db_manager
-from driver.wx_service import get_qr_code as wx_get_qr_code, get_state as wx_get_state, logout as wx_logout
+from core.integrations.supabase.storage import SupabaseStorage
+from core.integrations.supabase.database import db_manager
+from driver.wx.service import get_qr_code as wx_get_qr_code, get_state as wx_get_state, logout as wx_logout
 
 
 router = APIRouter(prefix=f"/auth", tags=["认证"])

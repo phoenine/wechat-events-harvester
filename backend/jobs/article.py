@@ -1,5 +1,5 @@
-from core.repositories import article_repo
-from core.config import DEBUG, cfg
+from core.articles import article_repo
+from core.common.config import DEBUG, cfg
 
 
 def UpdateArticle(art: dict, check_exist: bool = False):

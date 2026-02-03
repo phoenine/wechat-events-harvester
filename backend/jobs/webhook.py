@@ -1,11 +1,13 @@
-from core.models import Article, Feed, MessageTask
-from core.notice import notice
+from core.articles.model import Article
+from core.feeds.model import Feed
+from core.message_tasks.model import MessageTask
+from core.integrations.notice import notice
 from dataclasses import dataclass
-from core.lax import TemplateParser
+from core.common.lax import TemplateParser
 from datetime import datetime
-from core.log import logger
-from core.config import cfg
-from core.content_format import format_content
+from core.common.log import logger
+from core.common.config import cfg
+from core.articles.content_format import format_content
 
 
 @dataclass
