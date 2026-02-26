@@ -1,4 +1,5 @@
 import requests
+from core.common.log import logger
 from core.common.version import *
 
 try:
@@ -9,10 +10,10 @@ try:
     data = response.json()
     LATEST_VERSION = data.get("tag_name", "").replace("v", "")
 except requests.RequestException as e:
-    print(f"Failed to fetch latest version: {e}")
+    logger.info(f"Failed to fetch latest version: {e}")
     LATEST_VERSION = ""
 except ValueError as e:
-    print(f"Failed to parse JSON response: {e}")
+    logger.info(f"Failed to parse JSON response: {e}")
     LATEST_VERSION = ""
 
 # API接口前缀

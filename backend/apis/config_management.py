@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Body, Path, Query
+from fastapi import APIRouter, Depends, HTTPException, Body, Path, Query, status
 from core.config_management import config_repo
 from core.integrations.supabase.auth import get_current_user
 from models import success_response, error_response, ConfigManagementCreate
@@ -28,8 +28,13 @@ async def list_configs(
                 "total": total,
             }
         )
+    except HTTPException:
+        raise
     except Exception as e:
-        return error_response(code=500, message=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=error_response(code=500, message=str(e)),
+        )
 
 
 @router.get("/{config_key}", summary="获取单个配置项详情")
@@ -43,8 +48,13 @@ async def get_config(
         if not config:
             raise HTTPException(status_code=404, detail="Config not found")
         return success_response(data=config)
+    except HTTPException:
+        raise
     except Exception as e:
-        return error_response(code=500, message=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=error_response(code=500, message=str(e)),
+        )
 
 
 @router.post("", summary="创建配置项")
@@ -72,8 +82,13 @@ async def create_config(
             config_data.description or "",
         )
         return success_response(data=new_config)
+    except HTTPException:
+        raise
     except Exception as e:
-        return error_response(code=500, message=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=error_response(code=500, message=str(e)),
+        )
 
 
 @router.put("/{config_key}", summary="更新配置项")
@@ -93,8 +108,13 @@ async def update_config(
             config_key, config_data.config_value, config_data.description or ""
         )
         return success_response(data=updated_config)
+    except HTTPException:
+        raise
     except Exception as e:
-        return error_response(code=500, message=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=error_response(code=500, message=str(e)),
+        )
 
 
 @router.delete("/{config_key}", summary="删除配置项")
@@ -112,5 +132,10 @@ async def delete_config(
         # 删除配置项
         await config_repo.delete_config(config_key)
         return success_response(message="Config deleted successfully")
+    except HTTPException:
+        raise
     except Exception as e:
-        return error_response(code=500, message=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=error_response(code=500, message=str(e)),
+        )

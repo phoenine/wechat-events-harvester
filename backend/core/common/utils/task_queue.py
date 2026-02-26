@@ -3,7 +3,7 @@ import threading
 import time
 import gc
 from typing import Callable, Any
-from core.common.print import print_error, print_info, print_warning, print_success
+from core.common.log import logger
 
 
 class TaskQueueManager:
@@ -27,16 +27,16 @@ class TaskQueueManager:
         if not self._is_running:
             self.run_task_background()
         self._queue.put((task, args, kwargs))
-        print_success(f"{self.tag}队列任务添加成功\n")
+        logger.success(f"{self.tag}队列任务添加成功\n")
 
     def run_task_background(self) -> None:
         with self._lock:
             if self._is_running:
-                print_warning("队列任务已在后台运行，忽略重复启动")
+                logger.warning("队列任务已在后台运行，忽略重复启动")
                 return
             self._is_running = True
         threading.Thread(target=self.run_tasks, daemon=True).start()
-        print_warning("队列任务后台运行")
+        logger.warning("队列任务后台运行")
 
     def run_tasks(self, timeout: float = 1.0) -> None:
         """执行队列中的所有任务，并持续运行以接收新任务"""
@@ -52,9 +52,9 @@ class TaskQueueManager:
                         start_time = time.time()
                         task(*args, **kwargs)
                         duration = time.time() - start_time
-                        print_info(f"\n任务执行完成, 耗时: {duration:.2f}秒")
+                        logger.info(f"\n任务执行完成, 耗时: {duration:.2f}秒")
                     except Exception as e:
-                        print_error(f"队列任务执行失败: {e}")
+                        logger.error(f"队列任务执行失败: {e}")
                     finally:
                         self._queue.task_done()
                 except queue.Empty:
@@ -90,7 +90,7 @@ class TaskQueueManager:
                     self._queue.task_done()
                 except queue.Empty:
                     break
-            print_success("队列已清空")
+            logger.success("队列已清空")
 
     def delete_queue(self) -> None:
         """删除队列(停止并清空所有任务)"""
@@ -102,7 +102,7 @@ class TaskQueueManager:
                     self._queue.task_done()
                 except queue.Empty:
                     break
-            print_success("队列已删除")
+            logger.success("队列已删除")
 
 
 TaskQueue = TaskQueueManager(tag="默认队列")
@@ -111,12 +111,12 @@ if __name__ == "__main__":
 
     def task1():
         time.sleep(3)
-        print("执行任务1")
+        logger.info("执行任务1")
         time.sleep(3)
 
     def task2(name):
         time.sleep(2)
-        print(f"执行任务2, 参数: {name}")
+        logger.info(f"执行任务2, 参数: {name}")
         time.sleep(6)
 
     manager = TaskQueueManager(tag="默认队列")

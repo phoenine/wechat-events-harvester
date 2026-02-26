@@ -1,10 +1,7 @@
 import yaml
-from core.integrations.supabase.database import (
-    sync_get_config_managements,
-    sync_set_config_management,
-)
-import logging
+from core.config_management import config_repo
 from typing import Dict, Any
+from core.common.log import logger
 
 
 class ConfigManager:
@@ -16,19 +13,7 @@ class ConfigManager:
         :param config_path: 配置文件路径，默认为config.yaml
         """
         self.config_path = config_path
-        self.logger = self._setup_logger()
-
-    def _setup_logger(self):
-        """设置日志记录器"""
-        logger = logging.getLogger("ConfigManager")
-        logger.setLevel(logging.INFO)
-        handler = logging.StreamHandler()
-        formatter = logging.Formatter(
-            "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        )
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
-        return logger
+        self.logger = logger.bind(component="ConfigManager")
 
     def _load_config(self):
         """加载YAML配置文件"""
@@ -67,7 +52,7 @@ class ConfigManager:
             description = description[:255]
 
             # 使用Supabase存储配置项
-            sync_set_config_management(
+            config_repo.sync_set_config(
                 key, str(value) if value is not None else "", description
             )
             self.logger.debug(f"成功存储配置项: {key}")
@@ -109,7 +94,7 @@ class ConfigManager:
         from core.common.config import cfg
 
         keys = cfg.get("safe.hide_config", "db").split(",")
-        print(keys)
+        logger.info(keys)
         try:
             for key, value in config.items():
                 if key in keys:
@@ -186,7 +171,7 @@ class ConfigManager:
 
         try:
             # 从数据库获取所有配置项
-            config_items = sync_get_config_managements()
+            config_items = config_repo.sync_get_configs()
             flat_config = {
                 item["config_key"]: item["config_value"] for item in config_items
             }
@@ -208,12 +193,12 @@ class ConfigManager:
 if __name__ == "__main__":
     manager = ConfigManager()
     # 示例用法
-    print("1. 将config.yaml存储到数据库")
+    logger.info("1. 将config.yaml存储到数据库")
     success = manager.store_config_to_db()
     if not success:
         exit(1)
 
-    print("\n2. 从数据库生成config.yaml.backup")
+    logger.info("\n2. 从数据库生成config.yaml.backup")
     success = manager.generate_config_from_db("config.yaml.backup")
     if not success:
         exit(1)

@@ -1,5 +1,6 @@
 from typing import Union, Optional, Dict, List
 from core.message_tasks import message_repo
+from core.common.log import logger
 
 
 def get_message_task(job_id: Union[str, list] = None) -> Optional[List[Dict]]:
@@ -17,5 +18,5 @@ def get_message_task(job_id: Union[str, list] = None) -> Optional[List[Dict]]:
         message_tasks = message_repo.sync_get_message_tasks(filters=filters)
         return message_tasks if message_tasks else None
     except Exception as e:
-        print(f"获取消息任务失败: {e}")
+        logger.info(f"获取消息任务失败: {e}")
         return None

@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from typing import List, Optional
-from core.common.print import print_error, print_info
+from core.common.log import logger
 from fastapi import APIRouter, Depends, HTTPException, status, Body, Query
 from core.integrations.supabase.auth import get_current_user
 from core.message_tasks import message_repo
@@ -35,7 +35,10 @@ async def list_message_tasks(
             }
         )
     except Exception as e:
-        return error_response(code=500, message=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=error_response(code=500, message=str(e)),
+        )
 
 
 @router.get("/{task_id}", summary="获取单个消息任务详情")
@@ -49,8 +52,13 @@ async def get_message_task(
         if not message_task:
             raise HTTPException(status_code=404, detail="Message task not found")
         return success_response(data=message_task)
+    except HTTPException:
+        raise
     except Exception as e:
-        return error_response(code=500, message=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=error_response(code=500, message=str(e)),
+        )
 
 
 @router.get("/message/test/{task_id}", summary="测试消息")
@@ -64,8 +72,13 @@ async def test_message_task(
         if not message_task:
             raise HTTPException(status_code=404, detail="Message task not found")
         return success_response(data=message_task)
+    except HTTPException:
+        raise
     except Exception as e:
-        return error_response(code=500, message=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=error_response(code=500, message=str(e)),
+        )
 
 
 @router.get("/{task_id}/run", summary="执行单个消息任务详情")
@@ -93,7 +106,7 @@ async def run_message_task(
                     mps["count"] = count
                     mps["list"].append(ids)
                 except Exception as e:
-                    print_error(e)
+                    logger.error(e)
                     pass
         if isTest:
             count = 1
@@ -102,9 +115,14 @@ async def run_message_task(
             data=mps, message=f"执行成功，共执行更新{count}个订阅号"
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
-        print_error(e)
-        return error_response(code=402, message=str(e))
+        logger.error(e)
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail=error_response(code=402, message=str(e)),
+        )
 
 
 @router.post("", summary="创建消息任务", status_code=status.HTTP_201_CREATED)
@@ -130,8 +148,11 @@ async def create_message_task(
         new_task = await message_repo.create_message_task(task_data_dict)
         return success_response(data=new_task)
     except Exception as e:
-        print_error(e)
-        return error_response(code=500, message=str(e))
+        logger.error(e)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=error_response(code=500, message=str(e)),
+        )
 
 
 @router.put("/{task_id}", summary="更新消息任务")
@@ -166,9 +187,17 @@ async def update_message_task(
         if updated_tasks:
             return success_response(data=updated_tasks[0])
         else:
-            return error_response(code=500, message="更新消息任务失败")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=error_response(code=500, message="更新消息任务失败"),
+            )
+    except HTTPException:
+        raise
     except Exception as e:
-        return error_response(code=500, message=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=error_response(code=500, message=str(e)),
+        )
 
 
 @router.put("/job/fresh", summary="重载任务")
@@ -193,5 +222,10 @@ async def delete_message_task(
 
         await message_repo.delete_message_task(task_id)
         return success_response(message="Message task deleted successfully")
+    except HTTPException:
+        raise
     except Exception as e:
-        return error_response(code=500, message=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=error_response(code=500, message=str(e)),
+        )

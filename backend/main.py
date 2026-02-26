@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from core.common.config import cfg
-from core.common.print import print_warning
+from core.common.log import logger
 
 
 if __name__ == "__main__":
@@ -15,12 +15,12 @@ if __name__ == "__main__":
 
         asyncio.run(init.init())
     if cfg.args.job == "True" and cfg.get("server.enable_job", False):
-        from jobs import start_all_task
+        from jobs.mps import start_all_task
 
         threading.Thread(target=start_all_task, daemon=False).start()
     else:
-        print_warning("未开启定时任务")
-    print("启动服务器")
+        logger.warning("未开启定时任务")
+    logger.info("启动服务器")
     AutoReload = cfg.get("server.auto_reload", False)
     thread = cfg.get("server.threads", 1)
     uvicorn.run(

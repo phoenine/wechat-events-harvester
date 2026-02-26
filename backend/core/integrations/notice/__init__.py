@@ -2,6 +2,7 @@ from core.integrations.notice.wechat import send_wechat_message
 from core.integrations.notice.dingtalk import send_dingtalk_message
 from core.integrations.notice.feishu import send_feishu_message
 from core.integrations.notice.custom import send_custom_message
+from core.common.log import logger
 
 
 def notice(webhook_url, title, text, notice_type: str = None):
@@ -15,7 +16,7 @@ def notice(webhook_url, title, text, notice_type: str = None):
     - text: 消息内容
     """
     if len(str(webhook_url)) == 0:
-        print("未提供webhook_url")
+        logger.info("未提供webhook_url")
         return
     if "qyapi.weixin.qq.com" in webhook_url:
         notice_type = "wechat"
@@ -36,4 +37,4 @@ def notice(webhook_url, title, text, notice_type: str = None):
     elif notice_type == "custom":
         send_custom_message(webhook_url, title, text)
     else:
-        print("不支持的通知类型")
+        logger.info("不支持的通知类型")

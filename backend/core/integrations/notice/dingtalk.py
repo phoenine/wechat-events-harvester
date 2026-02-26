@@ -1,5 +1,6 @@
 import requests
 import json
+from core.common.log import logger
 
 
 def send_dingtalk_message(webhook_url, title, text, is_at_all=False, at_mobiles=[]):
@@ -23,9 +24,9 @@ def send_dingtalk_message(webhook_url, title, text, is_at_all=False, at_mobiles=
         response = requests.post(
             url=webhook_url, headers=headers, data=json.dumps(data)
         )
-        print(response.text)
+        logger.info(response.text)
     except Exception as e:
-        print("通知发送失败", e)
+        logger.error(f"通知发送失败: {e}")
 
 
 # 使用示例

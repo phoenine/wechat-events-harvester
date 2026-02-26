@@ -3,10 +3,8 @@ import uuid
 import psycopg2
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Any
-import logging
+from core.common.log import logger
 
-
-logger = logging.getLogger(__name__)
 
 
 class DatabaseManager:

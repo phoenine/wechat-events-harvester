@@ -1,8 +1,8 @@
-from core.integrations.wx import WxGather
+from core.integrations.wx import create_gather
 from time import sleep
 import random
 
-from core.common.print import print_success, print_error, print_warning
+from core.common.log import logger
 from core.common.config import cfg
 from driver.wx.service import fetch_article as wx_fetch_article
 from core.articles import article_repo
@@ -11,7 +11,7 @@ from core.common.status import DataStatus as DATA_STATUS
 
 def fetch_articles_without_content():
     """查询content为空的文章, 调用微信内容提取方法获取内容并更新数据库"""
-    ga = WxGather().Model()
+    ga = create_gather()
     try:
         # 查询content为空的文章
         articles = article_repo.sync_get_articles(
@@ -20,7 +20,7 @@ def fetch_articles_without_content():
             )
 
         if not articles:
-            print_warning("暂无需要获取内容的文章")
+            logger.warning("暂无需要获取内容的文章")
             return
 
         for article in articles:
@@ -30,7 +30,7 @@ def fetch_articles_without_content():
             else:
                 url = f"https://mp.weixin.qq.com/s/{article.get('id')}"
 
-            print(f"正在处理文章: {article.get('title')}, URL: {url}")
+            logger.info(f"正在处理文章: {article.get('title')}, URL: {url}")
 
             # 获取内容（同步方式）
             if cfg.get("gather.content_mode", "web"):
@@ -40,7 +40,7 @@ def fetch_articles_without_content():
                     content = (content_data or {}).get("content")
                 else:
                     err = env.get("error") or {}
-                    print_error(
+                    logger.error(
                         f"抓取文章失败: code={err.get('code')} reason={err.get('reason') or err.get('message')}"
                     )
                     content = None
@@ -54,16 +54,16 @@ def fetch_articles_without_content():
                 # 更新内容
                 update_data = {"content": content}
                 if content == "DELETED":
-                    print_error(f"获取文章 {article.get('title')} 内容已被发布者删除")
+                    logger.error(f"获取文章 {article.get('title')} 内容已被发布者删除")
                     update_data["status"] = DATA_STATUS.DELETED
 
                 article_repo.sync_update_article(article.get("id"), update_data)
-                print_success(f"成功更新文章 {article.get('title')} 的内容")
+                logger.success(f"成功更新文章 {article.get('title')} 的内容")
             else:
-                print_error(f"获取文章 {article.get('title')} 内容失败")
+                logger.error(f"获取文章 {article.get('title')} 内容失败")
 
     except Exception as e:
-        print(f"处理过程中发生错误: {e}")
+        logger.info(f"处理过程中发生错误: {e}")
     finally:
         # wx_service.fetch_article 内部会自行管理抓取器的浏览器生命周期，这里无需额外 Close
         pass
@@ -74,12 +74,11 @@ from core.common.utils import TaskQueue
 
 scheduler = TaskScheduler()
 task_queue = TaskQueue
-task_queue.run_task_background()
 
 
 def start_sync_content():
     if not cfg.get("gather.content_auto_check", False):
-        print_warning("自动检查并同步文章内容功能未启用")
+        logger.warning("自动检查并同步文章内容功能未启用")
         return
     interval = int(cfg.get("gather.content_auto_interval", 1))  # 每隔多少分钟
     cron_exp = f"*/{interval} * * * *"
@@ -90,7 +89,7 @@ def start_sync_content():
         task_queue.add_task(fetch_articles_without_content)
 
     job_id = scheduler.add_cron_job(do_sync, cron_expr=cron_exp)
-    print_success(f"已添自动同步文章内容任务: {job_id}")
+    logger.success(f"已添自动同步文章内容任务: {job_id}")
     scheduler.start()
 
 

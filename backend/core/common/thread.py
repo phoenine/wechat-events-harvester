@@ -1,5 +1,6 @@
 import threading
 import time
+from core.common.log import logger
 
 
 class ThreadManager(threading.Thread):
@@ -42,9 +43,9 @@ class ThreadManager(threading.Thread):
             if self._target:
                 self._target(*self._args, **self._kwargs)
         except Exception as e:
-            print(f"线程 {self.name} 发生异常: {e}")
+            logger.info(f"线程 {self.name} 发生异常: {e}")
         finally:
-            print(f"线程 {self.name} 已停止")
+            logger.info(f"线程 {self.name} 已停止")
 
 
 # 示例用法
@@ -52,7 +53,7 @@ if __name__ == "__main__":
 
     def example_task():
         while True:
-            print("线程运行中...")
+            logger.info("线程运行中...")
             time.sleep(1)
 
     # 初始化并返回thread对象

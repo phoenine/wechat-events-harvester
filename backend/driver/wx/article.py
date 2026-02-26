@@ -1,6 +1,6 @@
 from driver.browser.playwright import PlaywrightController
 from typing import Any, List, Optional
-from core.common.print import print_error, print_info, print_success, print_warning
+from core.common.log import logger
 import time
 import base64
 import re
@@ -51,11 +51,11 @@ class WXArticleFetcher:
                     continue
 
             # 如果所有格式都失败，返回当前时间戳
-            print_warning(f"无法解析时间格式: {publish_time_str}，使用当前时间")
+            logger.warning(f"无法解析时间格式: {publish_time_str}，使用当前时间")
             return int(datetime.now().timestamp())
 
         except Exception as e:
-            print_error(f"时间转换失败: {e}")
+            logger.error(f"时间转换失败: {e}")
             return int(datetime.now().timestamp())
 
     def extract_biz_from_source(self, url: str, page=None) -> str:
@@ -82,7 +82,7 @@ class WXArticleFetcher:
         try:
             # 从页面源码中查找biz信息
             page_source = page.content()
-            print_info(f"开始解析Biz")
+            logger.info(f"开始解析Biz")
             biz_match = re.search(r'var biz = "([^"]+)"', page_source)
             if biz_match:
                 return biz_match.group(1)
@@ -95,7 +95,7 @@ class WXArticleFetcher:
             return ""
 
         except Exception as e:
-            print_error(f"从页面源码中提取biz参数失败: {e}")
+            logger.error(f"从页面源码中提取biz参数失败: {e}")
             return ""
 
     def extract_id_from_url(self, url: str) -> str:
@@ -130,7 +130,7 @@ class WXArticleFetcher:
                 return id_str
 
         except Exception as e:
-            print_error(f"提取文章ID失败: {e}")
+            logger.error(f"提取文章ID失败: {e}")
             return ""
 
     def _inject_mp_cookies(self):
@@ -193,7 +193,7 @@ class WXArticleFetcher:
             for i, url in enumerate(urls, 1):
                 if url == "":
                     continue
-                print_info(f"正在处理第 {i}/{total_count} 篇文章: {url}")
+                logger.info(f"正在处理第 {i}/{total_count} 篇文章: {url}")
 
                 try:
                     article_data = self.get_article_content(url)
@@ -214,17 +214,17 @@ class WXArticleFetcher:
                     content_backup = article_data.get("content", "")
                     del article_data["content"]
 
-                    print_success(f"获取成功: {article_data}")
+                    logger.success(f"获取成功: {article_data}")
 
                     # 更新文章
                     ok = UpdateArticle(article, check_exist=True)
                     if ok:
                         success_count += 1
-                        print_info(
+                        logger.info(
                             f"已更新文章: {article_data.get('title', '未知标题')}"
                         )
                     else:
-                        print_warning(
+                        logger.warning(
                             f"更新失败: {article_data.get('title', '未知标题')}"
                         )
 
@@ -236,14 +236,14 @@ class WXArticleFetcher:
                         time.sleep(3)
 
                 except Exception as e:
-                    print_error(f"处理文章失败 {url}: {e}")
+                    logger.error(f"处理文章失败 {url}: {e}")
                     continue
 
-            print_success(f"批量处理完成: 成功 {success_count}/{total_count}")
+            logger.success(f"批量处理完成: 成功 {success_count}/{total_count}")
             return success_count > 0
 
         except Exception as e:
-            print_error(f"批量修复文章失败: {e}")
+            logger.error(f"批量修复文章失败: {e}")
             return False
         finally:
             self.Close()
@@ -264,7 +264,7 @@ class WXArticleFetcher:
         self._inject_mp_cookies()
 
         self.page = self.controller.page
-        print_warning(f"Get:{url} Wait:{self.wait_timeout}")
+        logger.warning(f"Get:{url} Wait:{self.wait_timeout}")
         self.controller.open_url(url, wait_until="load")
         page = self.page
         content = ""
@@ -392,7 +392,7 @@ class WXArticleFetcher:
                         if src:
                             images.append(src)
                 except Exception as _img_err:
-                    print_warning(f"提取图片失败: {_img_err}")
+                    logger.warning(f"提取图片失败: {_img_err}")
 
                 if images:
                     info["pic_url"] = images[0]
@@ -406,7 +406,7 @@ class WXArticleFetcher:
                         publish_time_str
                     )
                 except Exception as e:
-                    print_warning(f"获取发布时间失败: {e}")
+                    logger.warning(f"获取发布时间失败: {e}")
                     publish_time = ""
                 info["title"] = title
                 info["publish_time"] = publish_time
@@ -417,14 +417,14 @@ class WXArticleFetcher:
                 info["topic_image"] = topic_image
 
             except Exception as e:
-                print_error(f"文章内容获取失败: {str(e)}")
+                logger.error(f"文章内容获取失败: {str(e)}")
                 preview = (body or "")[:200]
                 if not preview:
                     try:
                         preview = (page.content() or "")[:200]
                     except Exception:
                         preview = ""
-                print_warning(f"页面内容预览: {preview}...")
+                logger.warning(f"页面内容预览: {preview}...")
                 msg = str(e)
                 if "Timeout" in msg or "timeout" in msg or "timed out" in msg:
                     raise WxArticleError(
@@ -475,7 +475,7 @@ class WXArticleFetcher:
         if hasattr(self, "controller"):
             self.controller.Close()
         else:
-            print("WXArticleFetcher未初始化或已销毁")
+            logger.info("WXArticleFetcher未初始化或已销毁")
 
     def __del__(self):
         """销毁文章获取器"""
@@ -500,9 +500,9 @@ class WXArticleFetcher:
             if title:
                 pdf_path = cfg.get("export.pdf.dir", "./data/pdf")
                 output_path = os.path.abspath(f"{pdf_path}/{title}.pdf")
-                print_info(f"PDF 目标路径预检：{output_path}")
+                logger.info(f"PDF 目标路径预检：{output_path}")
         except Exception as e:
-            print_error(f"生成 PDF 失败: {str(e)}")
+            logger.error(f"生成 PDF 失败: {str(e)}")
 
     def clean_article_content(self, html_content: str):
         from tools.html import htmltools

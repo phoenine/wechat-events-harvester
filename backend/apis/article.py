@@ -4,7 +4,7 @@ from core.articles import article_repo
 from core.feeds import feed_repo
 from models import success_response, error_response, format_search_kw
 from core.common.config import cfg
-from core.common.print import print_warning, print_info, print_error, print_success
+from core.common.log import logger
 from typing import Optional, List, Dict, Any, cast
 
 router = APIRouter(prefix=f"/articles", tags=["文章管理"])
@@ -65,7 +65,7 @@ async def get_articles(
     except HTTPException as e:
         raise e
     except Exception as e:
-        print_error(f"获取文章列表失败: {str(e)}")
+        logger.error(f"获取文章列表失败: {str(e)}")
         raise HTTPException(
             status_code=fast_status.HTTP_406_NOT_ACCEPTABLE,
             detail=error_response(code=50001, message=f"获取文章列表失败: {str(e)}"),
@@ -91,7 +91,7 @@ async def get_article_detail(
     except HTTPException as e:
         raise e
     except Exception as e:
-        print_error(f"获取文章详情失败: {str(e)}")
+        logger.error(f"获取文章详情失败: {str(e)}")
         raise HTTPException(
             status_code=fast_status.HTTP_406_NOT_ACCEPTABLE,
             detail=error_response(code=50001, message=f"获取文章详情失败: {str(e)}"),
@@ -137,7 +137,7 @@ async def get_next_article(
     except HTTPException as e:
         raise e
     except Exception as e:
-        print_error(f"获取下一篇文章失败: {str(e)}")
+        logger.error(f"获取下一篇文章失败: {str(e)}")
         raise HTTPException(
             status_code=fast_status.HTTP_406_NOT_ACCEPTABLE,
             detail=error_response(code=50001, message=f"获取下一篇文章失败: {str(e)}"),
@@ -184,7 +184,7 @@ async def get_prev_article(
     except HTTPException as e:
         raise e
     except Exception as e:
-        print_error(f"获取上一篇文章失败: {str(e)}")
+        logger.error(f"获取上一篇文章失败: {str(e)}")
         raise HTTPException(
             status_code=fast_status.HTTP_406_NOT_ACCEPTABLE,
             detail=error_response(code=50001, message=f"获取上一篇文章失败: {str(e)}"),
@@ -199,7 +199,7 @@ async def clean_expired_articles(_current_user: dict = Depends(get_current_user)
             {"message": "清理过期文章成功", "deleted_count": deleted_count}
         )
     except Exception as e:
-        print_error(f"清理过期文章错误: {str(e)}")
+        logger.error(f"清理过期文章错误: {str(e)}")
         raise HTTPException(
             status_code=fast_status.HTTP_201_CREATED,
             detail=error_response(code=50001, message="清理过期文章失败"),
@@ -228,7 +228,7 @@ async def clean_orphan_articles(_current_user: dict = Depends(get_current_user))
             {"message": "清理无效文章成功", "deleted_count": deleted_count}
         )
     except Exception as e:
-        print_error(f"清理无效文章错误: {str(e)}")
+        logger.error(f"清理无效文章错误: {str(e)}")
         raise HTTPException(
             status_code=fast_status.HTTP_201_CREATED,
             detail=error_response(code=50001, message="清理无效文章失败"),
@@ -243,7 +243,7 @@ async def clean_duplicate(_current_user: dict = Depends(get_current_user)):
         (msg, deleted_count) = clean_duplicate_articles()
         return success_response({"message": msg, "deleted_count": deleted_count})
     except Exception as e:
-        print_error(f"清理重复文章: {str(e)}")
+        logger.error(f"清理重复文章: {str(e)}")
         raise HTTPException(
             status_code=fast_status.HTTP_201_CREATED,
             detail=error_response(code=50001, message="清理重复文章"),
@@ -271,7 +271,7 @@ async def delete_article(
     except HTTPException as e:
         raise e
     except Exception as e:
-        print_error(f"删除文章失败: {str(e)}")
+        logger.error(f"删除文章失败: {str(e)}")
         raise HTTPException(
             status_code=fast_status.HTTP_406_NOT_ACCEPTABLE,
             detail=error_response(code=50001, message=f"删除文章失败: {str(e)}"),

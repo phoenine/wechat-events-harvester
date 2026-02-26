@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from core.tags import tag_repo
 from models import success_response, error_response, TagsCreate
 from core.integrations.supabase.auth import get_current_user
-from core.common.print import print_error
+from core.common.log import logger
 
 
 router = APIRouter(prefix="/tags", tags=["标签管理"])
@@ -28,7 +28,10 @@ async def get_tags(
             }
         )
     except Exception as e:
-        return error_response(code=500, message=f"获取标签列表失败: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=error_response(code=500, message=f"获取标签列表失败: {str(e)}"),
+        )
 
 
 @router.post("", summary="创建新标签", description="创建一个新的标签")
@@ -53,7 +56,7 @@ async def create_tag(
         new_tag = await tag_repo.create_tag(tag_data)
         return success_response(data=new_tag)
     except Exception as e:
-        print_error(e)
+        logger.error(e)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=error_response(
@@ -71,7 +74,10 @@ async def get_tag(
     """获取单个标签详情"""
     tag = await tag_repo.get_tag_by_id(tag_id)
     if not tag:
-        return error_response(code=404, message="Tag not found")
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=error_response(code=404, message="Tag not found"),
+        )
     return success_response(data=tag)
 
 
@@ -89,7 +95,10 @@ async def update_tag(
     try:
         existing_tag = await tag_repo.get_tag_by_id(tag_id)
         if not existing_tag:
-            return error_response(code=404, message="Tag not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=error_response(code=404, message="Tag not found"),
+            )
 
         update_data = {
             "name": tag_data.name,
@@ -104,9 +113,17 @@ async def update_tag(
         if updated_tags:
             return success_response(data=updated_tags[0])
         else:
-            return error_response(code=500, message="更新标签失败")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=error_response(code=500, message="更新标签失败"),
+            )
+    except HTTPException:
+        raise
     except Exception as e:
-        return error_response(code=500, message=str(e))
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=error_response(code=500, message=str(e)),
+        )
 
 
 @router.delete(
@@ -122,8 +139,16 @@ async def delete_tag(
     try:
         existing_tag = await tag_repo.get_tag_by_id(tag_id)
         if not existing_tag:
-            return error_response(code=404, message="Tag not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=error_response(code=404, message="Tag not found"),
+            )
         await tag_repo.delete_tag(tag_id)
         return success_response(message="Tag deleted successfully")
+    except HTTPException:
+        raise
     except Exception as e:
-        return error_response(code=500, message=f"删除标签失败: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=error_response(code=500, message=f"删除标签失败: {str(e)}"),
+        )

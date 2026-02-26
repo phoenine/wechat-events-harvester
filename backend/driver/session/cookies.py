@@ -1,6 +1,6 @@
 import time
 from typing import Any, Iterable, Optional
-from core.common.print import print_warning
+from core.common.log import logger
 
 
 def expire(cookies: Any, *, cookie_name: str = "slave_sid") -> Optional[dict]:
@@ -38,7 +38,7 @@ def expire(cookies: Any, *, cookie_name: str = "slave_sid") -> Optional[dict]:
             expiry_time = float(cookie.get("expires"))
         except (TypeError, ValueError):
             # NOTE: 此处存在副作用，打印无效时间戳，调用方需注意
-            print_warning(f"{cookie_name} 的过期时间戳无效: {cookie.get('expires')}")
+            logger.warning(f"{cookie_name} 的过期时间戳无效: {cookie.get('expires')}")
             return None
 
         # 计算剩余时间，若已过期返回None

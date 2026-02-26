@@ -6,8 +6,7 @@ import time
 from typing import Any, Optional
 
 from bs4 import BeautifulSoup
-
-from core.common.print import print_error, print_info
+from core.common.log import logger
 from core.integrations.wx.base import WxGather
 
 
@@ -170,7 +169,7 @@ class MpsApi(WxGather):
                 msg = resp.json()
             except Exception as e:
                 # 请求异常属于硬失败：抛出让上层感知（保持原有“异常可见”策略）
-                print_error(f"请求失败: {e}")
+                logger.error(f"请求失败: {e}")
                 raise
 
             # ret 码处理（与 search_Biz 逻辑一致）

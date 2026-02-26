@@ -1,11 +1,10 @@
 import os
 from typing import Optional, Dict, List, Union, Any, cast
 from supabase import create_client, Client
-import logging
 
 from core.integrations.supabase import settings
+from core.common.log import logger
 
-logger = logging.getLogger(__name__)
 
 
 class SupabaseClient:

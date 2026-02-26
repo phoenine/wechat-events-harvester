@@ -1,7 +1,7 @@
 from __future__ import annotations
 from threading import Lock, Timer
 from typing import Callable, Optional, Any
-from core.common.print import print_error
+from core.common.log import logger
 
 
 class RefreshManager:
@@ -78,7 +78,7 @@ class RefreshManager:
             self._schedule_next()
         except Exception as e:
             # 失败时打印错误并停止定时器，避免异常循环
-            print_error(f"定时刷新任务失败: {str(e)}")
+            logger.error(f"定时刷新任务失败: {str(e)}")
             self.stop()
 
     def start(self):
@@ -89,7 +89,7 @@ class RefreshManager:
             # 立即刷新一次，确保状态及时更新
             self.refresh_once()
         except Exception as e:
-            print_error(f"定时刷新任务失败: {str(e)}")
+            logger.error(f"定时刷新任务失败: {str(e)}")
             self.stop()
             return
         # 刷新成功后安排下一次定时刷新

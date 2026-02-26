@@ -1,7 +1,7 @@
 from __future__ import annotations
 from threading import Lock
 from typing import Any, Callable, Optional
-from core.common.print import print_error, print_warning
+from core.common.log import logger
 from driver.session.cookies import expire
 from driver.session.store import Store
 from driver.wx.schemas import WxMpSession
@@ -82,7 +82,7 @@ class SessionManager:
                 return None
             return sess
         except Exception as e:
-            print_warning(f"加载持久化会话失败: {str(e)}")
+            logger.warning(f"加载持久化会话失败: {str(e)}")
             return None
 
     def save_persisted_session(self, session: WxMpSession) -> None:
@@ -92,14 +92,14 @@ class SessionManager:
                 return
             Store.save_session(session)
         except Exception as e:
-            print_warning(f"保存持久化会话失败: {str(e)}")
+            logger.warning(f"保存持久化会话失败: {str(e)}")
 
     def clear_persisted_session(self) -> None:
         """清理持久化存储中的公众号会话"""
         try:
             Store.clear_session()
         except Exception as e:
-            print_warning(f"清理持久化会话失败: {str(e)}")
+            logger.warning(f"清理持久化会话失败: {str(e)}")
 
     def is_session_valid(self, session: Optional[WxMpSession]) -> bool:
         """判断公众号会话是否有效"""
@@ -152,7 +152,7 @@ class SessionManager:
         """从当前 controller 构建 session"""
         controller = self._get_controller()
         if controller is None:
-            print_error("浏览器控制器未初始化")
+            logger.error("浏览器控制器未初始化")
             return None, None, None
 
         try:

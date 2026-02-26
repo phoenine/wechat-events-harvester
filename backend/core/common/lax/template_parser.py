@@ -1,5 +1,6 @@
 import re
 from typing import Any, Dict, List, Union
+from core.common.log import logger
 
 
 # """
@@ -458,9 +459,9 @@ class TemplateParser:
                 }
 
                 # Debug output
-                print(f"DEBUG - Condition evaluation result: {result}")
-                print(f"DEBUG - Local vars after execution: {local_vars.keys()}")
-                print(f"DEBUG - Updated context to return: {updated_context.keys()}")
+                logger.info(f"DEBUG - Condition evaluation result: {result}")
+                logger.info(f"DEBUG - Local vars after execution: {local_vars.keys()}")
+                logger.info(f"DEBUG - Updated context to return: {updated_context.keys()}")
 
                 # Ensure all calculated variables are included
                 for k, v in local_vars.items():
@@ -615,10 +616,10 @@ if __name__ == "__main__":
 
     parser = TemplateParser(template)
     result = parser.render(context)
-    print(result)
+    logger.info(result)
 
     # 示例代码 - 自定义函数功能
-    print("\n=== 自定义函数示例 ===")
+    logger.info("\n=== 自定义函数示例 ===")
 
     # 创建使用自定义函数的模板
     func_template = """
@@ -680,4 +681,4 @@ if __name__ == "__main__":
 
     # 渲染并打印结果
     func_result = func_parser.render(func_context)
-    print(func_result)
+    logger.info(func_result)

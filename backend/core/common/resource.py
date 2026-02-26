@@ -1,9 +1,5 @@
 import psutil
 
-# Desc: 资源信息
-# Date: 2021-04-29 15:59
-# Author: Rachel
-# 缓存不会频繁变动的系统信息
 _STATIC_INFO = {
     "cpu": {
         "cores": psutil.cpu_count(logical=False),

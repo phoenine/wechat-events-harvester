@@ -2,11 +2,11 @@ from __future__ import annotations
 import time
 import traceback
 from typing import Any, Callable, Optional, TypedDict
-from core.print import print_info, print_warning
 from driver.wx.schemas import WxMpSession, WxEnvelope, WxErrorCode, WxError, WxDriverError
 from driver.session import SessionManager
 from driver.wx.state import LoginState
-from core.config import cfg
+from core.common.config import cfg
+from core.common.log import logger
 
 
 class WxSessionInfo(TypedDict, total=False):
@@ -178,7 +178,7 @@ class WxService:
             from driver.wx import WX_API
             self._wx = WX_API
         except Exception as e:
-            print_warning(f"wx_service: 非Web实现不可用, 回退到Web驱动: {e}")
+            logger.warning(f"wx_service: 非Web实现不可用, 回退到Web驱动: {e}")
 
         # 会话管理器：统一负责持久化会话的读取和清理操作
         self._session = SessionManager()
@@ -409,7 +409,7 @@ class WxService:
         callback: Optional[Callable[[Any, Any], None]] = None,
     ) -> WxEnvelope:
         """从 Store/SessionManager 恢复公众号会话"""
-        print_info("公众号会话恢复：尝试从 Store/SessionManager 复用登录态")
+        logger.info("公众号会话恢复：尝试从 Store/SessionManager 复用登录态")
 
         try:
             sess = self._wx.Token(CallBack=callback)

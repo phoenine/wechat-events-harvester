@@ -1,5 +1,5 @@
 from __future__ import annotations
-from core.common.print import print_error
+from core.common.log import logger
 from core.integrations.wx.base import WxGatherHooks
 
 
@@ -11,7 +11,7 @@ def build_wx_gather_hooks() -> WxGatherHooks:
         try:
             from datetime import datetime
             import time
-            from core.feeds.repository import feed_repo
+            from core.feeds import feed_repo
 
             current_time = int(time.time())
             update_data = {
@@ -59,6 +59,6 @@ def build_wx_gather_hooks() -> WxGatherHooks:
                 args=("公众号平台登录失效,请重新登录",),
             ).start()
         except Exception:
-            print_error("公众号平台登录失效,请重新登录，且发送通知失败")
+            logger.error("公众号平台登录失效,请重新登录，且发送通知失败")
 
     return WxGatherHooks(on_update_mps=_on_update_mps, on_error=_on_error)

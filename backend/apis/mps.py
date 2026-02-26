@@ -21,7 +21,7 @@ from core.common.config import cfg
 from core.common.res import save_avatar_locally
 from jobs.article import UpdateArticle
 from core.common.utils import TaskQueue
-from core.integrations.wx import WxGather
+from core.integrations.wx import create_gather
 
 
 router = APIRouter(prefix=f"/mps", tags=["公众号管理"])
@@ -43,9 +43,9 @@ async def search_mp(
         }
         return success_response(data)
     except Exception as e:
-        print(f"搜索公众号错误: {str(e)}")
+        logger.info(f"搜索公众号错误: {str(e)}")
         raise HTTPException(
-            status_code=status.HTTP_201_CREATED,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=error_response(
                 code=50001,
                 message=f"搜索公众号失败,请重新扫码授权！",
@@ -92,9 +92,9 @@ async def get_mps(
             }
         )
     except Exception as e:
-        print(f"获取公众号列表错误: {str(e)}")
+        logger.info(f"获取公众号列表错误: {str(e)}")
         raise HTTPException(
-            status_code=status.HTTP_201_CREATED,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=error_response(code=50001, message="获取公众号列表失败"),
         )
 
@@ -111,24 +111,31 @@ async def update_mps(
         mp_raw = await feed_repo.get_feed_by_id(mp_id)
         mp: Dict[str, Any] = cast(Dict[str, Any], mp_raw)
         if not mp:
-            return error_response(code=40401, message="请选择一个公众号")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=error_response(code=40401, message="请选择一个公众号"),
+            )
 
         sync_interval = cfg.get("sync_interval", 60)
         if mp.get("update_time") is None:
             mp["update_time"] = int(time.time()) - sync_interval
         time_span = int(time.time()) - int(mp.get("update_time", 0))
         if time_span < sync_interval:
-            return error_response(
-                code=40402, message="请不要频繁更新操作", data={"time_span": time_span}
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=error_response(
+                    code=40402,
+                    message="请不要频繁更新操作",
+                    data={"time_span": time_span},
+                ),
             )
         result = []
 
         def UpArt(mp_data):
-            from core.integrations.wx import WxGather
-            from core.print import print_error
+            from core.common.log import logger
 
             try:
-                wx = WxGather().Model()
+                wx = create_gather()
                 wx.get_Articles(
                     mp_data.get("faker_id"),
                     Mps_id=mp_data.get("id"),
@@ -140,7 +147,7 @@ async def update_mps(
                 # 注意：此处的 result 是闭包外局部变量，线程更新不会体现在 HTTP 返回
                 # 维持原有行为，不在此修复
             except Exception as e:
-                print_error(f"更新公众号文章线程异常: {e}")
+                logger.error(f"更新公众号文章线程异常: {e}")
 
         import threading
 
@@ -150,9 +157,9 @@ async def update_mps(
             {"time_span": time_span, "list": result, "total": len(result), "mps": mp}
         )
     except Exception as e:
-        print(f"更新公众号文章: {str(e)}", e)
+        logger.info(f"更新公众号文章: {str(e)}", e)
         raise HTTPException(
-            status_code=status.HTTP_201_CREATED,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=error_response(code=50001, message=f"更新公众号文章{str(e)}"),
         )
 
@@ -165,14 +172,14 @@ async def get_mp(
         mp = await feed_repo.get_feed_by_id(mp_id)
         if not mp:
             raise HTTPException(
-                status_code=status.HTTP_201_CREATED,
+                status_code=status.HTTP_404_NOT_FOUND,
                 detail=error_response(code=40401, message="公众号不存在"),
             )
         return success_response(mp)
     except Exception as e:
-        print(f"获取公众号详情错误: {str(e)}")
+        logger.info(f"获取公众号详情错误: {str(e)}")
         raise HTTPException(
-            status_code=status.HTTP_201_CREATED,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=error_response(code=50001, message="获取公众号详情失败"),
         )
 
@@ -194,12 +201,24 @@ async def get_mp_by_article(
             err = (env or {}).get("error") or {}
             msg = err.get("message") or "获取公众号信息失败"
             reason = err.get("reason")
-            return error_response(code=50001, message=f"{msg}: {reason}" if reason else msg, data=env)
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=error_response(
+                    code=50001,
+                    message=f"{msg}: {reason}" if reason else msg,
+                    data=env,
+                ),
+            )
 
         return success_response(env.get("data"))
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"获取公众号详情错误: {str(e)}")
-        return error_response(code=50001, message=f"获取公众号信息失败: {str(e)}")
+        logger.info(f"获取公众号详情错误: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=error_response(code=50001, message=f"获取公众号信息失败: {str(e)}"),
+        )
 
 
 @router.post("", summary="添加公众号")
@@ -271,8 +290,9 @@ async def add_mp(
         # 在这里实现第一次添加时获取公众号文章
         if not existing_feed:
             max_page = int(cfg.get("max_page", "2"))
+            wx = create_gather()
             TaskQueue.add_task(
-                WxGather().Model().get_Articles,
+                wx.get_Articles,
                 faker_id=feed["faker_id"],
                 Mps_id=feed["id"],
                 CallBack=UpdateArticle,
@@ -295,7 +315,7 @@ async def add_mp(
         # 直接透传上面主动抛出的 HTTPException
         raise
     except Exception as e:
-        print(f"添加公众号错误: {str(e)}")
+        logger.info(f"添加公众号错误: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=error_response(code=50001, message="添加公众号失败"),
@@ -311,15 +331,15 @@ async def delete_mp(
         mp = await feed_repo.get_feed_by_id(mp_id)
         if not mp:
             raise HTTPException(
-                status_code=status.HTTP_201_CREATED,
+                status_code=status.HTTP_404_NOT_FOUND,
                 detail=error_response(code=40401, message="订阅号不存在"),
             )
 
         await feed_repo.delete_feed(mp_id)
         return success_response({"message": "订阅号删除成功", "id": mp_id})
     except Exception as e:
-        print(f"删除订阅号错误: {str(e)}")
+        logger.info(f"删除订阅号错误: {str(e)}")
         raise HTTPException(
-            status_code=status.HTTP_201_CREATED,
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=error_response(code=50001, message="删除订阅号失败"),
         )

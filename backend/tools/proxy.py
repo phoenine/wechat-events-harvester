@@ -1,5 +1,4 @@
 # coding:utf-8
-import logging
 import os
 import select
 import zlib
@@ -27,6 +26,7 @@ from OpenSSL.crypto import (
     load_privatekey,
     X509Req,
 )
+from core.common.log import logger
 
 """
 该文件并未项目核心功能，仅作辅助脚本使用
@@ -52,12 +52,6 @@ __all__ = [
     "Request",
     "Response",
 ]
-logging.basicConfig(
-    level=logging.INFO,
-    format="[%(asctime)s] %(levelname)s %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
-
 
 class HttpTransfer(object):
     version_dict = {9: "HTTP/0.9", 10: "HTTP/1.0", 11: "HTTP/1.1"}
@@ -602,7 +596,7 @@ class MitmProxy(ThreadingMixIn, HTTPServer):
         cert_file="ca.crt",
     ):
         HTTPServer.__init__(self, server_addr, RequestHandlerClass, bind_and_activate)
-        logging.info(
+        logger.info(
             "HTTPServer is running at address( %s , %d )......"
             % (server_addr[0], server_addr[1])
         )

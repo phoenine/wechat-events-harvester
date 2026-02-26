@@ -10,12 +10,10 @@ from fastapi.security import (
 )
 from supabase import create_client, Client
 from pydantic import BaseModel
-import logging
 
 from core.integrations.supabase import settings
 from core.auth.model import UserCredentials, TokenResponse
-
-logger = logging.getLogger(__name__)
+from core.common.log import logger
 
 # Supabase 配置
 SUPABASE_URL = settings.url
@@ -174,7 +172,8 @@ class SupabaseAuthManager:
     async def get_user_by_token(self, token: str) -> Optional[Dict[str, Any]]:
         """根据 Supabase Access Token 获取用户信息"""
         try:
-            client = self.get_client()
+            # 使用独立客户端，避免共享会话在并发请求中串号
+            client = create_client(self.url, self.anon_key)
             # 使用 Access Token 设置当前会话并获取用户
             client.auth.set_session(token, "")
             user = client.auth.get_user()

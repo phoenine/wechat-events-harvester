@@ -296,10 +296,10 @@ class TaskScheduler:
 if __name__ == "__main__":
 
     def sample_task():
-        print("定时任务执行中...")
+        logger.info("定时任务执行中...")
 
     with TaskScheduler() as scheduler:
         job_id = scheduler.add_cron_job(sample_task, "* * * * * *")
-        print(f"已添加任务: {job_id}")
+        logger.info(f"已添加任务: {job_id}")
         input("按Enter键退出...\n")
     pass

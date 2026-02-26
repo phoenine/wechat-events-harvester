@@ -55,5 +55,5 @@ def format_content(content: str, content_format: str = "html"):
             content = re.sub(r"\n\s*\n\s*\n+", "\n\n", content)
 
     except Exception as e:
-        logger.error("format_content error: %s", e)
+        logger.error(f"format_content error: {e}")
     return content

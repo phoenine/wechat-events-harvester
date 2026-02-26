@@ -1,4 +1,5 @@
 from core.integrations.supabase.database import sync_get_articles, sync_delete_article
+from core.common.log import logger
 
 
 def clean_duplicate_articles():
@@ -29,7 +30,7 @@ def clean_duplicate_articles():
 
         # 删除重复文章
         for duplicate in duplicates:
-            print(f"删除重复文章: {duplicate['title']}")
+            logger.info(f"删除重复文章: {duplicate['title']}")
             sync_delete_article(duplicate["id"])
 
         return (f"已清理 {len(duplicates)} 篇重复文章", len(duplicates))
@@ -39,4 +40,4 @@ def clean_duplicate_articles():
 
 if __name__ == "__main__":
     result = clean_duplicate_articles()
-    print(result)
+    logger.info(result)

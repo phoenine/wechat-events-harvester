@@ -6,6 +6,7 @@ from models import success_response, error_response
 from core.integrations.supabase.auth import get_current_user
 from core.profiles import profile_repo
 from core.integrations.supabase.storage import supabase_storage_avatar
+from core.common.config import cfg
 
 
 router = APIRouter(prefix="/user", tags=["用户资料"])
@@ -60,7 +61,26 @@ async def upload_avatar(
 ):
     """处理用户头像上传"""
     try:
-        file_bytes = await file.read()
+        allowed_types = {"image/jpeg", "image/png", "image/gif", "image/webp"}
+        if file.content_type not in allowed_types:
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail=error_response(code=41501, message="不支持的头像类型"),
+            )
+
+        # 默认限制 5MB，可通过配置 avatar.max_bytes 覆盖
+        max_bytes = int(cfg.get("avatar.max_bytes", 5 * 1024 * 1024))
+        file_bytes = bytearray()
+        while True:
+            chunk = await file.read(1024 * 1024)
+            if not chunk:
+                break
+            file_bytes.extend(chunk)
+            if len(file_bytes) > max_bytes:
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail=error_response(code=41301, message="头像文件过大"),
+                )
         _, ext = os.path.splitext(file.filename or "")
         if not ext:
             ext = ".jpg"
@@ -71,7 +91,7 @@ async def upload_avatar(
         )
 
         avatar_url = await supabase_storage_avatar.upload_bytes(
-            data=file_bytes,
+            data=bytes(file_bytes),
             path=object_path,
             content_type=file.content_type or "image/jpeg",
         )

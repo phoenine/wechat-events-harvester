@@ -1,7 +1,7 @@
 import os
 import time
 import threading
-from core.common.print import print_warning
+from core.common.log import logger
 
 
 # 进程内登录互斥，防止并发登录/重复扫码
@@ -85,7 +85,7 @@ class LockManager:
             # 锁有效
             return True
         except Exception as e:
-            print_warning(f"检查锁失败: {str(e)}")
+            logger.warning(f"检查锁失败: {str(e)}")
             return False
 
     def try_acquire(self) -> bool:
@@ -119,7 +119,7 @@ class LockManager:
             self._owner_ts = None
             return False
         except Exception as e:
-            print_warning(f"创建锁失败: {str(e)}")
+            logger.warning(f"创建锁失败: {str(e)}")
             return False
 
     def release(self) -> bool:
@@ -158,5 +158,5 @@ class LockManager:
             os.remove(self.lock_file_path)
             return True
         except Exception as e:
-            print_warning(f"释放锁失败: {str(e)}")
+            logger.warning(f"释放锁失败: {str(e)}")
             return False

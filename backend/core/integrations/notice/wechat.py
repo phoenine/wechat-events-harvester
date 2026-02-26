@@ -1,5 +1,6 @@
 import requests
 import json
+from core.common.log import logger
 
 
 def send_wechat_message(webhook_url, title, text):
@@ -19,6 +20,6 @@ def send_wechat_message(webhook_url, title, text):
         response = requests.post(
             url=webhook_url, headers=headers, data=json.dumps(data)
         )
-        print(response.text)
+        logger.info(response.text)
     except Exception as e:
-        print("微信通知发送失败", e)
+        logger.error(f"微信通知发送失败: {e}")

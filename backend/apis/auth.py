@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from models import success_response, error_response
+from core.common.log import logger
 from core.common.config import set_config, cfg
 from core.integrations.supabase.auth import (
     get_current_user,
@@ -15,28 +16,28 @@ from driver.wx.service import get_qr_code as wx_get_qr_code, get_state as wx_get
 router = APIRouter(prefix=f"/auth", tags=["认证"])
 
 # 兼容：原先把 session_id 写到 WX_API.current_session_id 上。
-# 现在改为由本模块自行保存，避免依赖 driver.base/WX_API 的内部字段。
-_WX_CURRENT_SESSION_ID: str | None = None
+# 现在改为按用户保存，避免并发请求串号。
+_WX_SESSION_BY_USER_ID: dict[str, str] = {}
 
 
 def ApiSuccess(data):
     if data != None:
-        print("\n登录结果:")
-        print(f"Token: {data['token']}")
+        logger.info("\n登录结果:")
+        logger.info(f"Token: {data['token']}")
         set_config("token", data["token"])
         cfg.reload()
     else:
-        print("\n登录失败, 请检查上述错误信息")
+        logger.info("\n登录失败, 请检查上述错误信息")
 
 
 @router.get("/qr/code", summary="获取登录二维码")
 async def get_qrcode(_current_user=Depends(get_current_user)):
     session_id = None
     if db_manager.valid_session_db():
-        user_id = _current_user.get("supabase_user_id") or None
+        user_id = _current_user.get("id") or None
         session_id = await db_manager.create_session(user_id=user_id, expires_minutes=2)
-        global _WX_CURRENT_SESSION_ID
-        _WX_CURRENT_SESSION_ID = session_id
+        if user_id and session_id:
+            _WX_SESSION_BY_USER_ID[user_id] = session_id
     code_url = wx_get_qr_code(callback=ApiSuccess)
     if session_id:
         code_url.update({"session_id": session_id})
@@ -58,11 +59,12 @@ async def qr_url(_current_user=Depends(get_current_user)):
             {"image_url": None, "mode": "supabase" if sb.valid() else "local"}
         )
     url = state.get("wx_login_url")
-    global _WX_CURRENT_SESSION_ID
-    if url and _WX_CURRENT_SESSION_ID and db_manager.valid_session_db():
+    user_id = _current_user.get("id")
+    session_id = _WX_SESSION_BY_USER_ID.get(user_id) if user_id else None
+    if url and session_id and db_manager.valid_session_db():
         try:
             await db_manager.update_session(
-                _WX_CURRENT_SESSION_ID,
+                session_id,
                 status="waiting",
                 qr_signed_url=url,
                 expires_minutes=2,
@@ -86,28 +88,6 @@ async def qr_status(_current_user=Depends(get_current_user)):
 @router.get("/qr/over", summary="扫码完成")
 async def qr_success(_current_user=Depends(get_current_user)):
     return success_response(wx_logout(clear_persisted=False))
-
-
-@router.post("/login", summary="用户登录")
-async def login(form_data: OAuth2PasswordRequestForm = Depends()):
-    try:
-        # 使用Supabase认证
-        credentials = UserCredentials(
-            username=form_data.username, password=form_data.password
-        )
-
-        auth_result = await authenticate_user_credentials(credentials)
-
-        # authenticate_user_credentials 现已返回 TokenResponse 对象
-        return success_response(auth_result.dict())
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=error_response(code=40101, message=f"登录失败: {str(e)}"),
-        )
 
 
 @router.post("/token", summary="获取Token")

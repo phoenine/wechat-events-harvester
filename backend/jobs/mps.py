@@ -3,11 +3,10 @@ from typing import Optional, List, Any
 
 from jobs.article import UpdateArticle, Update_Over
 from core.feeds import feed_repo
-from core.integrations.wx import WxGather
+from core.integrations.wx import create_gather
 from core.common.log import logger
 from core.common.task import TaskScheduler
 from core.common.config import cfg
-from core.common.print import print_success, print_error, print_warning
 from core.common.utils import TaskQueue
 from core.message_tasks.model import MessageTask
 from jobs.webhook import web_hook
@@ -20,8 +19,8 @@ except Exception:
 
 
 def fetch_all_article():
-    print("开始更新")
-    wx = WxGather().Model()
+    logger.info("开始更新")
+    wx = create_gather()
     try:
         # 获取公众号列表（使用Supabase，同步接口）
         mps = feed_repo.sync_get_feeds()
@@ -45,17 +44,17 @@ def fetch_all_article():
                     MaxPage=1,
                 )
             except Exception as e:
-                print_error(e)
-        print(wx.articles)
+                logger.error(e)
+        logger.info(wx.articles)
     except Exception as e:
-        print_error(e)
+        logger.error(e)
     finally:
         logger.info(f"所有公众号更新完成,共更新{wx.all_count()}条数据")
 
 
 def do_job(mp: Any = None, task: Optional[MessageTask] = None) -> None:
-    print("执行任务")
-    wx = WxGather().Model()
+    logger.info("执行任务")
+    wx = create_gather()
     try:
         # 兼容 dict / 对象两种形式
         faker_id = getattr(mp, "faker_id", None) or (
@@ -77,7 +76,7 @@ def do_job(mp: Any = None, task: Optional[MessageTask] = None) -> None:
             interval=INTERVAL,
         )
     except Exception as e:
-        print_error(e)
+        logger.error(e)
     finally:
         count = wx.all_count()
         from jobs.webhook import MessageWebHook
@@ -85,7 +84,7 @@ def do_job(mp: Any = None, task: Optional[MessageTask] = None) -> None:
         tms = MessageWebHook(task=task, feed=mp, articles=wx.articles)
         web_hook(tms)
         task_id = getattr(task, "id", "?")
-        print_success(f"任务({task_id})[{mp_name}]执行成功,{count}成功条数")
+        logger.success(f"任务({task_id})[{mp_name}]执行成功,{count}成功条数")
 
 def add_job(
     feeds: Optional[List[Any]] = None,
@@ -102,11 +101,11 @@ def add_job(
 
         TaskQueue.add_task(do_job, feed, task)
         if isTest:
-            print(f"测试任务，{mp_name}，加入队列成功")
+            logger.info(f"测试任务，{mp_name}，加入队列成功")
             reload_job()
             break
-        print(f"{mp_name}，加入队列成功")
-    print_success(TaskQueue.get_queue_info())
+        logger.info(f"{mp_name}，加入队列成功")
+    logger.success(TaskQueue.get_queue_info())
 
 def get_feeds(task: Optional[MessageTask] = None) -> Optional[List[Any]]:
     """根据任务配置获取公众号列表。
@@ -124,7 +123,7 @@ def get_feeds(task: Optional[MessageTask] = None) -> Optional[List[Any]]:
                     if mps:
                         return mps
         except Exception as e:
-            print_error(f"解析任务[{getattr(task, 'id', '?')}]的 mps_id 失败: {e}")
+            logger.error(f"解析任务[{getattr(task, 'id', '?')}]的 mps_id 失败: {e}")
 
     # 回退到查询全部公众号（同步接口）
     return feed_repo.sync_get_feeds()
@@ -132,7 +131,7 @@ def get_feeds(task: Optional[MessageTask] = None) -> Optional[List[Any]]:
 scheduler = TaskScheduler()
 
 def reload_job():
-    print_success("重载任务")
+    logger.success("重载任务")
     scheduler.clear_all_jobs()
     TaskQueue.clear_queue()
     start_job()
@@ -143,11 +142,11 @@ def run(job_id: Optional[str] = None, isTest: bool = False):
 
     tasks = get_message_task(job_id)
     if not tasks:
-        print("没有任务")
+        logger.info("没有任务")
         return None
     for task in tasks:
         # 添加测试任务
-        print_warning(f"{task.name} 添加到队列运行")
+        logger.warning(f"{task.name} 添加到队列运行")
         add_job(get_feeds(task), task, isTest=isTest)
         pass
     return tasks
@@ -158,13 +157,13 @@ def start_job(job_id: Optional[str] = None) -> None:
 
     tasks = get_message_task(job_id)
     if not tasks:
-        print("没有任务")
+        logger.info("没有任务")
         return
     tag = "定时采集"
     for task in tasks:
         cron_exp = task.cron_exp
         if not cron_exp:
-            print_error(f"任务[{task.id}]没有设置cron表达式")
+            logger.error(f"任务[{task.id}]没有设置cron表达式")
             continue
 
         job_id = scheduler.add_cron_job(
@@ -174,9 +173,9 @@ def start_job(job_id: Optional[str] = None) -> None:
             job_id=str(task.id),
             tag="定时采集",
         )
-        print(f"已添加任务: {job_id}")
+        logger.info(f"已添加任务: {job_id}")
     scheduler.start()
-    print("启动任务")
+    logger.info("启动任务")
 
 
 def start_all_task():

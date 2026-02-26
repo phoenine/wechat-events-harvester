@@ -2,6 +2,7 @@ import os
 import sys
 from dotenv import load_dotenv
 import psycopg2
+from core.common.log import logger
 
 def read_sql_file(path):
     with open(path, "r", encoding="utf-8") as f:
@@ -11,7 +12,7 @@ def main():
     load_dotenv()
     db_url = os.getenv("SUPABASE_DB_URL")
     if not db_url:
-        print("SUPABASE_DB_URL not set")
+        logger.info("SUPABASE_DB_URL not set")
         sys.exit(1)
     sql_path = os.path.join(os.path.dirname(__file__), "..", "sql", "auth_sessions.sql")
     sql = read_sql_file(os.path.abspath(sql_path))
@@ -32,12 +33,12 @@ def main():
             try:
                 cur.execute(stmt)
             except Exception as se:
-                print(f"Skip statement due to error: {se}\nSQL: {stmt[:120]}...")
+                logger.info(f"Skip statement due to error: {se}\nSQL: {stmt[:120]}...")
         conn.commit()
-        print("Migration applied: auth_sessions")
+        logger.info("Migration applied: auth_sessions")
     except Exception as e:
         conn.rollback()
-        print(str(e))
+        logger.info(str(e))
         sys.exit(1)
     finally:
         conn.close()

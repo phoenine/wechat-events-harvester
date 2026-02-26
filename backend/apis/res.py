@@ -6,6 +6,7 @@ import hashlib
 import time
 import json
 from core.common.config import cfg
+from core.common.log import logger
 
 CACHE_DIR = cfg.get("cache.dir", "data/cache")
 CACHE_TTL = 3600  # 缓存过期时间1小时
@@ -67,7 +68,7 @@ async def reverse_proxy(request: Request, path: str):
     headers = dict(request.headers)
     headers.pop("host", host)
     headers.pop("referer", None)
-    print(headers)
+    logger.info(headers)
     resp = await client.request(
         method=request.method,
         url=target_url,
@@ -89,7 +90,7 @@ async def reverse_proxy(request: Request, path: str):
         with open(headers_filename, "w", encoding="utf-8") as f:
             json.dump(headers, f)
     except Exception as e:
-        print(f"缓存响应失败: {str(e)}")
+        logger.info(f"缓存响应失败: {str(e)}")
     return Response(
         content=content, status_code=status_code, headers=headers, media_type=media_type
     )

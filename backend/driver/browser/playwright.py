@@ -5,6 +5,7 @@ import random
 import uuid
 import threading
 from playwright.sync_api import sync_playwright
+from core.common.log import logger
 
 
 browsers_name = os.getenv("BROWSER_TYPE", "firefox")
@@ -125,7 +126,7 @@ class PlaywrightController:
             json_obj = json.loads(json_string)
             return json_obj
         except json.JSONDecodeError as e:
-            print(f"JSON解析错误: {e}")
+            logger.info(f"JSON解析错误: {e}")
             return ""
 
     def parse_string_to_dict(self, kv_str: str):
@@ -187,7 +188,7 @@ class PlaywrightController:
 
     def _get_realistic_user_agent(self, mobile_mode=False):
         """获取更真实的User-Agent字符串"""
-        print(f"浏览器特征设置完成: {'移动端' if mobile_mode else '桌面端'}")
+        logger.info(f"浏览器特征设置完成: {'移动端' if mobile_mode else '桌面端'}")
         if mobile_mode:
             mobile_agents = [
                 "Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1",
@@ -354,7 +355,7 @@ class PlaywrightController:
         try:
             return json.dumps(data_dict, ensure_ascii=False, indent=2)
         except (TypeError, ValueError) as e:
-            print(f"字典转JSON失败: {e}")
+            logger.info(f"字典转JSON失败: {e}")
             return ""
 
 

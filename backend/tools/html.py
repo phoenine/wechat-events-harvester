@@ -1,4 +1,4 @@
-from core.common.print import print_error, print_info, print_warning
+from core.common.log import logger
 
 
 class HtmlTools:
@@ -74,7 +74,7 @@ class HtmlTools:
             try:
                 from bs4 import BeautifulSoup
             except ImportError:
-                print_error("BeautifulSoup未安装, 无法进行属性过滤")
+                logger.error("BeautifulSoup未安装, 无法进行属性过滤")
                 return html_content
 
             soup = BeautifulSoup(html_content, "html.parser")
@@ -109,12 +109,12 @@ class HtmlTools:
                         removed_count += 1
 
             if removed_count > 0:
-                print_info(f"根据属性成功移除 {removed_count} 个HTML元素")
+                logger.info(f"根据属性成功移除 {removed_count} 个HTML元素")
 
             return str(soup)
 
         except Exception as e:
-            print_error(f"根据属性移除元素失败: {e}")
+            logger.error(f"根据属性移除元素失败: {e}")
             return html_content
 
     def remove_empty_text_elements(self, html_content: str) -> str:
@@ -134,7 +134,7 @@ class HtmlTools:
             try:
                 from bs4 import BeautifulSoup
             except ImportError:
-                print_error("BeautifulSoup未安装，无法进行空文本过滤")
+                logger.error("BeautifulSoup未安装，无法进行空文本过滤")
                 return html_content
 
             soup = BeautifulSoup(html_content, "html.parser")
@@ -190,12 +190,12 @@ class HtmlTools:
                         removed_count += 1
 
             if removed_count > 0:
-                print_info(f"成功移除 {removed_count} 个空文本元素")
+                logger.info(f"成功移除 {removed_count} 个空文本元素")
 
             return str(soup)
 
         except Exception as e:
-            print_error(f"移除空文本元素失败: {e}")
+            logger.error(f"移除空文本元素失败: {e}")
             return html_content
 
     def _normalize_html(self, html_string: str) -> str:
@@ -238,7 +238,7 @@ class HtmlTools:
             try:
                 from bs4 import BeautifulSoup
             except ImportError:
-                print_error("BeautifulSoup未安装，无法进行HTML清理")
+                logger.error("BeautifulSoup未安装，无法进行HTML清理")
                 return html_content
 
             soup = BeautifulSoup(html_content, "html.parser")
@@ -290,17 +290,17 @@ class HtmlTools:
                             elements = []  # 元素已在lxml中移除，不需要再处理
 
                         except ImportError:
-                            print_warning("lxml未安装，无法使用xpath选择器")
+                            logger.warning("lxml未安装，无法使用xpath选择器")
                             continue
                         except Exception as e:
-                            print_error(f"XPath处理失败: {e}")
+                            logger.error(f"XPath处理失败: {e}")
                             continue
                     elif selector_type == "id":
                         elements = soup.find_all(id=selector)
                     elif selector_type == "class":
                         elements = soup.find_all(class_=selector)
                     else:
-                        print_warning(f"不支持的选择器类型: {selector_type}")
+                        logger.warning(f"不支持的选择器类型: {selector_type}")
                         continue
 
                     # 移除找到的元素
@@ -310,18 +310,18 @@ class HtmlTools:
                             removed_count += 1
 
                 except Exception as e:
-                    print_error(
+                    logger.error(
                         f"移除元素失败 (选择器: {selector}, 类型: {selector_type}): {e}"
                     )
                     continue
 
             if removed_count > 0:
-                print_info(f"成功移除 {removed_count} 个HTML元素")
+                logger.info(f"成功移除 {removed_count} 个HTML元素")
 
             return str(soup)
 
         except Exception as e:
-            print_error(f"HTML清理失败: {e}")
+            logger.error(f"HTML清理失败: {e}")
             return html_content
 
 

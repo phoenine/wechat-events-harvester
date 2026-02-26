@@ -2,7 +2,7 @@ import requests
 import json
 import re
 import os
-from core.common.print import print_error
+from core.common.log import logger
 import random
 
 from dataclasses import dataclass
@@ -106,7 +106,7 @@ class WxGather:
 
             html = getattr(r, "text", "") or ""
             if "当前环境异常，完成验证后即可继续访问" in html:
-                print_error("当前环境异常，完成验证后即可继续访问")
+                logger.info("当前环境异常，完成验证后即可继续访问")
                 return ""
             # 常见：token=xxxx
             m = re.search(r"[?&]token=([^&\"']+)", html)
@@ -117,7 +117,7 @@ class WxGather:
             if m:
                 return m.group(1)
         except Exception as e:
-            print_error(f"_derive_mp_token_from_cookies 失败: {e}")
+            logger.error(f"_derive_mp_token_from_cookies 失败: {e}")
             return ""
 
         return ""
@@ -205,11 +205,11 @@ class WxGather:
             text = r.text
             text = self.remove_common_html_elements(text)
             if "当前环境异常，完成验证后即可继续访问" in text:
-                print_error("当前环境异常，完成验证后即可继续访问")
+                logger.error("当前环境异常，完成验证后即可继续访问")
                 return ""
             return text
         except Exception as e:
-            print_error(f"content_extract 请求失败: {e}")
+            logger.error(f"content_extract 请求失败: {e}")
             return ""
 
     def FillBack(self, CallBack=None, data=None, Ext_Data=None):
@@ -277,7 +277,7 @@ class WxGather:
                 )
                 return
         except Exception as e:
-            print_error(f"请求失败: {e}")
+            logger.error(f"请求失败: {e}")
             raise e
         return msg
 
@@ -325,7 +325,7 @@ class WxGather:
             pass
 
         if code == "Invalid Session":
-            print_error(error)
+            logger.error(error)
             return
 
         raise Exception(error)
@@ -387,10 +387,10 @@ class WxGather:
                     pattern, "", processed_content, flags=re.DOTALL | re.IGNORECASE
                 )
             except re.error as e:
-                print_error(f"正则表达式错误: {pattern}, 错误信息: {e}")
+                logger.error(f"正则表达式错误: {pattern}, 错误信息: {e}")
                 continue
             except Exception as e:
-                print_error(f"处理HTML区域时发生错误: {e}")
+                logger.error(f"处理HTML区域时发生错误: {e}")
                 continue
 
         return processed_content
