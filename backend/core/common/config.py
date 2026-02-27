@@ -3,7 +3,7 @@ import sys
 import os
 import argparse
 from typing import Any
-from core.common.log import logger
+from core.common.log import logger, configure_logger
 from core.common.file import FileCrypto
 
 
@@ -196,6 +196,12 @@ class Config:
 
 
 cfg = Config()
+
+# 配置加载完成后，按配置文件中的日志参数重新初始化 logger
+configure_logger(
+    level=str(cfg.get("log.level", "INFO")).upper(),
+    log_file=cfg.get("log.file", ""),
+)
 
 
 def set_config(key: str, value: str):

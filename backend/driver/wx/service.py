@@ -3,7 +3,7 @@ import time
 import traceback
 from typing import Any, Callable, Optional, TypedDict
 from driver.wx.schemas import WxMpSession, WxEnvelope, WxErrorCode, WxError, WxDriverError
-from driver.session import SessionManager
+from driver.session.manager import SessionManager
 from driver.wx.state import LoginState
 from core.common.config import cfg
 from core.common.log import logger
