@@ -1,11 +1,11 @@
 from __future__ import annotations
 import time
 import traceback
+import threading
 from typing import Any, Callable, Optional, TypedDict
 from driver.wx.schemas import WxMpSession, WxEnvelope, WxErrorCode, WxError, WxDriverError
 from driver.session.manager import SessionManager
 from driver.wx.state import LoginState
-from core.common.config import cfg
 from core.common.log import logger
 
 
@@ -174,11 +174,12 @@ class WxService:
     """WxService 对外业务门面"""
 
     def __init__(self):
+        self._wx = None
         try:
-            from driver.wx import WX_API
+            from driver.wx.core import WX_API
             self._wx = WX_API
         except Exception as e:
-            logger.warning(f"wx_service: 非Web实现不可用, 回退到Web驱动: {e}")
+            logger.warning(f"wx_service: 微信 Web 驱动初始化失败: {e}")
 
         # 会话管理器：统一负责持久化会话的读取和清理操作
         self._session = SessionManager()
@@ -223,7 +224,18 @@ class WxService:
                     # session_id 仍由 wx 驱动维护（兼容历史行为）
                     session_id = getattr(self._wx, "current_session_id", None)
                     if session_id:
-                        auth_session_store.update_session_sync(session_id, **payload)
+                        def _do_update() -> None:
+                            logger.info(
+                                f"[wx-db] update auth_sessions id={session_id} payload={payload}"
+                            )
+                            ok = auth_session_store.update_session_sync(session_id, **payload)
+                            logger.info(f"[wx-db] update result id={session_id} ok={ok}")
+
+                        threading.Thread(target=_do_update, daemon=True).start()
+                    else:
+                        logger.warning(
+                            f"[wx-db] skip update: missing current_session_id, state={state}"
+                        )
                 except Exception:
                     # best-effort：不影响主流程
                     return
@@ -233,19 +245,26 @@ class WxService:
                     from core.integrations.supabase.storage import supabase_storage_qr
 
                     if not supabase_storage_qr.valid():
+                        logger.warning("[wx-qr] storage invalid, skip upload")
                         return None
 
                     # 复用既有 async 上传实现（wx.py 侧会在事件循环中调用 hook）
+                    logger.info(f"[wx-qr] upload start bytes={len(img_bytes or b'')}")
                     up = supabase_storage_qr.upload_qr(img_bytes)
                     # upload_qr 可能是 async，也可能是 sync；在这里做兼容处理
                     if hasattr(up, "__await__"):
-                        import asyncio
+                        from core.common.utils.async_tools import run_sync
 
-                        loop = asyncio.get_event_loop()
-                        up = loop.run_until_complete(up)
-
-                    return up.get("url") if isinstance(up, dict) else None
-                except Exception:
+                        up = run_sync(up)
+                    if isinstance(up, dict):
+                        logger.info(
+                            f"[wx-qr] upload done path={up.get('path')} url={up.get('url')}"
+                        )
+                        return up.get("url")
+                    logger.warning(f"[wx-qr] upload returned unexpected type={type(up)}")
+                    return None
+                except Exception as e:
+                    logger.error(f"[wx-qr] upload failed: {e}")
                     return None
 
             # 组装 hooks 并注入
@@ -548,6 +567,13 @@ class WxService:
         """兼容别名，调用 logout(clear_persisted=False)。"""
         self.logout(clear_persisted=False)
 
+    def set_current_session_id(self, session_id: Optional[str]) -> None:
+        """设置当前登录流程关联的会话 ID，供状态变更 hook 写库使用。"""
+        try:
+            self._wx.current_session_id = session_id
+        except Exception:
+            pass
+
 
 # NOTE: 懒加载单例：避免 import 阶段实例化 WxService 引发更深层 import 链与潜在副作用。
 _WX_SERVICE: Optional[WxService] = None
@@ -613,3 +639,7 @@ def logout(clear_persisted: bool = False) -> WxEnvelope:
 
 def shutdown() -> None:
     _get_service().shutdown()
+
+
+def set_current_session_id(session_id: Optional[str]) -> None:
+    _get_service().set_current_session_id(session_id)

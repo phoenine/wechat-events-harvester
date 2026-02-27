@@ -1,11 +1,11 @@
-from core.common.config import cfg
+from core.common.app_settings import settings
 from jobs.notice import sys_notice
 from driver.wx.service import get_qr_code, get_state
 import time
 
 
 def send_wx_code(title: str = "", url: str = ""):
-    if cfg.get("server.send_code", False):
+    if settings.send_code:
         # 迁移：统一走 wx_service，对外不再依赖 success.py 的回调
         get_qr_code(notice=CallBackNotice)
     return
@@ -20,11 +20,11 @@ def CallBackNotice():
         </svg>
         """
     url = str(url)
-    text = f"- 服务名：{cfg.get('server.name','')}\n"
+    text = f"- 服务名：{settings.server_name}\n"
     text += (
         f"- 发送时间： {time.strftime('%Y-%m-%d %H:%M:%S',time.localtime(time.time()))}"
     )
     if st.get("has_code"):
         text += f"![二维码]({url})"
         text += f"\n- 请使用微信扫描二维码进行授权"
-    sys_notice(text, cfg.get("server.code_title", "WeRss授权过期,扫码授权"))
+    sys_notice(text, settings.code_title or "WxHarvester授权过期,扫码授权")

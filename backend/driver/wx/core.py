@@ -1,6 +1,5 @@
 import os
 import time
-import asyncio
 import traceback
 from typing import Any, Callable, Optional, TypedDict
 from threading import Lock
@@ -71,7 +70,8 @@ class Wx:
             refresh_interval=self.refresh_interval,
             get_controller=lambda: self.controller,
             is_logged_in=self.is_logged_in,
-            on_refresh_success=lambda: self.Call_Success(schedule_refresh=False),
+            # 刷新成功只更新状态，不重复执行登录成功回调/持久化
+            on_refresh_success=lambda: self._set_state(LoginState.SUCCESS),
             on_expired=self._on_session_expired,
             login_lock=self._login_lock,
         )
@@ -192,7 +192,9 @@ class Wx:
                 LOGIN_MUTEX.release()
             except Exception:
                 pass
-            logger.warning("微信公众平台登录脚本正在运行，请勿重复运行")
+            logger.warning(
+                f"微信公众平台登录脚本正在运行，请勿重复运行 lock={self._lock.debug_snapshot()}"
+            )
             self._set_state(LoginState.WAIT_SCAN)
             return {
                 "code": self.wx_login_url,
@@ -202,7 +204,7 @@ class Wx:
 
         self.Clean()
         logger.info("子线程执行中")
-        from core.thread import ThreadManager
+        from core.common.thread import ThreadManager
 
         self.thread = ThreadManager(
             target=self.wxLogin, args=(CallBack, True, True, True)
@@ -245,6 +247,10 @@ class Wx:
         with self._login_lock:
             self.state = state
             self.last_error = error
+        logger.info(
+            f"[wx-state] state={state.value} has_code={bool(self.wx_login_url)} "
+            f"session_id={self.current_session_id} error={error or ''}"
+        )
         # 外部可插拔：状态变化上报（默认仍保持原有 DB best-effort 行为）
         self._emit_state_change_hook(
             state=state,
@@ -383,20 +389,8 @@ class Wx:
 
     # Phase B: wxLogin 拆分为可维护的私有步骤（不改变行为，仅拆结构）
     def _ensure_thread_event_loop(self):
-        """为登录线程准备 event loop（Playwright sync 底层依赖 asyncio）。"""
-        try:
-            _existing_loop = None
-            try:
-                _existing_loop = asyncio.get_event_loop()
-            except RuntimeError:
-                _existing_loop = None
-            if _existing_loop is None or _existing_loop.is_closed():
-                _new_loop = asyncio.new_event_loop()
-                asyncio.set_event_loop(_new_loop)
-                logger.info("为登录线程创建新的事件循环")
-        except Exception:
-            # 避免因事件循环异常阻断登录流程
-            pass
+        """sync Playwright 不需要显式创建 event loop，避免干扰其内部循环。"""
+        return
 
     def _fastpath_if_logged_in(self, CallBack=None) -> WxMpSession | None:
         """会话仍有效时的快速路径：复用现有会话并跳过登录流程。"""
@@ -491,11 +485,42 @@ class Wx:
 
     def _capture_qr_screenshot(self, page):
         """定位二维码并截图，返回 bytes。"""
-        qr_tag = ".login__type__container__scan__qrcode"
+        qr_tag = "img.login__type__container__scan__qrcode"
         qrcode = page.wait_for_selector(qr_tag, state="visible", timeout=15000)
         if qrcode is None:
-            raise Exception("未找到登录二维码元素")
+            raise Exception("未找到登录二维码图片元素")
+
+        # 等待二维码图片真正加载完成，避免截到白板占位图
+        page.wait_for_function(
+            """(selector) => {
+                const img = document.querySelector(selector);
+                if (!img) return false;
+                const src = img.getAttribute("src") || "";
+                return img.complete &&
+                    img.naturalWidth > 60 &&
+                    img.naturalHeight > 60 &&
+                    src.includes("scanloginqrcode");
+            }""",
+            arg=qr_tag,
+            timeout=15000,
+        )
+
+        src = qrcode.get_attribute("src") or ""
+        logger.info(f"[wx-qr] img src={src}")
         img_bytes = qrcode.screenshot()
+        head = img_bytes[:8].hex() if img_bytes else ""
+        logger.info(f"[wx-qr] captured selector={qr_tag} bytes={len(img_bytes or b'')} head={head}")
+        try:
+            os.makedirs("data/cache", exist_ok=True)
+            ts = int(time.time() * 1000)
+            qr_file = f"data/cache/qr-{ts}.png"
+            page_file = f"data/cache/qr-page-{ts}.png"
+            with open(qr_file, "wb") as f:
+                f.write(img_bytes or b"")
+            page.screenshot(path=page_file, full_page=True)
+            logger.info(f"[wx-qr] debug saved qr={qr_file} page={page_file}")
+        except Exception as e:
+            logger.warning(f"[wx-qr] debug save failed: {e}")
         if not img_bytes or len(img_bytes) <= 364:
             raise Exception("二维码图片获取失败，请重新扫码")
         return img_bytes
@@ -521,25 +546,47 @@ class Wx:
         if self.Notice is not None:
             self.Notice()
 
-        page.wait_for_url(self.WX_HOME + "*", timeout=120000)
+        logger.info(
+            f"[wx-login] wait_for_url target=contains('/cgi-bin/home') timeout_ms=120000 current_url={getattr(page, 'url', '')}"
+        )
+        try:
+            page.wait_for_url(
+                lambda url: "/cgi-bin/home" in str(url),
+                timeout=120000,
+                wait_until="domcontentloaded",
+            )
+        except Exception as e:
+            try:
+                current_url = page.url
+            except Exception:
+                current_url = ""
+            try:
+                ready_state = page.evaluate("() => document.readyState")
+            except Exception:
+                ready_state = "unknown"
+            try:
+                title = page.title()
+            except Exception:
+                title = ""
+            try:
+                os.makedirs("data/cache", exist_ok=True)
+                ts = int(time.time() * 1000)
+                fail_page = f"data/cache/login-timeout-{ts}.png"
+                page.screenshot(path=fail_page, full_page=True)
+                logger.warning(
+                    f"[wx-login] wait_for_url failed err={e} current_url={current_url} ready_state={ready_state} title={title} screenshot={fail_page}"
+                )
+            except Exception:
+                logger.warning(
+                    f"[wx-login] wait_for_url failed err={e} current_url={current_url} ready_state={ready_state} title={title}"
+                )
+            raise
         self._set_state(LoginState.SUCCESS)
         logger.info("登录成功, 正在获取cookie和token...")
 
     def _close_event_loop_if_needed(self, NeedExit: bool):
-        """仅当需要退出且浏览器已清理时关闭该线程 event loop。"""
-        if not NeedExit:
-            return
-        try:
-            if not getattr(self.controller, "driver", None):
-                loop = None
-                try:
-                    loop = asyncio.get_event_loop()
-                except RuntimeError:
-                    loop = None
-                if loop and not loop.is_closed():
-                    loop.close()
-        except Exception:
-            pass
+        """sync Playwright 自行管理循环，这里不做额外关闭。"""
+        return
 
     def wxLogin(
         self,
@@ -656,7 +703,11 @@ class Wx:
             logger.warning("未登录！")
 
         if self.CallBack is not None:
-            self.CallBack(self.SESSION, self.ext_data)
+            try:
+                self.CallBack(self.SESSION, self.ext_data)
+            except Exception as e:
+                # 回调失败不应影响已完成的登录流程
+                logger.warning(f"登录回调执行失败: {e}")
 
         return self.SESSION
 
@@ -667,23 +718,45 @@ class Wx:
             return {}
         data = {}
         selectors = {
-            "wx_app_name": ".account-name",
-            "wx_logo": ".account-avatar img",
-            "wx_read_yesterday": ".data-item:nth-child(1) .number",
-            "wx_share_yesterday": ".data-item:nth-child(2) .number",
-            "wx_watch_yesterday": ".data-item:nth-child(3) .number",
-            "wx_yuan_count": ".original-count .number",
-            "wx_user_count": ".user-count .number",
+            "wx_app_name": [".weui-desktop_name", ".account-name"],
+            "wx_logo": [".weui-desktop-account__img", ".account-avatar img"],
+            "wx_read_yesterday": [
+                ".weui-desktop-home-overview .weui-desktop-data-overview:nth-child(1) .weui-desktop-data-overview__desc span",
+                ".data-item:nth-child(1) .number",
+            ],
+            "wx_share_yesterday": [
+                ".weui-desktop-home-overview .weui-desktop-data-overview:nth-child(2) .weui-desktop-data-overview__desc span",
+                ".data-item:nth-child(2) .number",
+            ],
+            "wx_watch_yesterday": [
+                ".weui-desktop-home-overview .weui-desktop-data-overview:nth-child(3) .weui-desktop-data-overview__desc span",
+                ".data-item:nth-child(3) .number",
+            ],
+            "wx_yuan_count": [".original_cnt span", ".original-count .number"],
+            "wx_user_count": [
+                ".weui-desktop-user_num .weui-desktop-user_sum span",
+                ".user-count .number",
+            ],
         }
-        for key, selector in selectors.items():
+        for key, selector_list in selectors.items():
             try:
-                loc = page.locator(selector)
-                if key == "wx_logo":
-                    data[key] = loc.first.get_attribute("src") or ""
-                else:
-                    data[key] = (loc.first.inner_text(timeout=2_000) or "").strip()
+                value = ""
+                for selector in selector_list:
+                    loc = page.locator(selector)
+                    try:
+                        if key == "wx_logo":
+                            value = loc.first.get_attribute("src", timeout=2_000) or ""
+                        else:
+                            value = (loc.first.inner_text(timeout=2_000) or "").strip()
+                    except Exception:
+                        value = ""
+                    if value:
+                        break
+                data[key] = value
+                if not value:
+                    logger.warning(f"获取{key}失败: 未匹配到有效元素")
             except Exception as e:
-                logger.warning(f"获取{key}失败: {str(e)}")
+                logger.warning(f"获取{key}失败: {e}")
                 data[key] = ""
         return data
 

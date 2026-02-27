@@ -7,7 +7,7 @@ from schemas import success_response, error_response
 from core.integrations.supabase.auth import get_current_user
 from core.profiles import profile_repo
 from core.integrations.supabase.storage import supabase_storage_avatar
-from core.common.config import cfg
+from core.common.runtime_settings import runtime_settings
 
 
 router = APIRouter(prefix="/user", tags=["用户资料"])
@@ -82,7 +82,7 @@ async def upload_avatar(
             )
 
         # 默认限制 5MB，可通过配置 avatar.max_bytes 覆盖
-        max_bytes = int(cfg.get("avatar.max_bytes", 5 * 1024 * 1024))
+        max_bytes = await runtime_settings.get_int("avatar.max_bytes", 5 * 1024 * 1024)
         file_bytes = bytearray()
         while True:
             chunk = await file.read(1024 * 1024)

@@ -74,12 +74,19 @@ class AuthSessionStore:
             vals.append(qr_signed_url)
         if expires_minutes is not None:
             sets.append("expires_at=%s")
-            vals.append(datetime.now(timezone.utc) + timedelta(minutes=expires_minutes))
+            vals.append(
+                (
+                    datetime.now(timezone.utc) + timedelta(minutes=expires_minutes)
+                ).isoformat()
+            )
         if not sets:
             return False
 
         try:
             payload = dict(zip([s.split("=")[0] for s in sets], vals))
+            logger.info(
+                f"[auth-session-store] update session_id={session_id} payload={payload}"
+            )
             await self.client.update(
                 "auth_sessions",
                 payload,

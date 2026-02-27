@@ -53,6 +53,7 @@ __all__ = [
     "Response",
 ]
 
+
 class HttpTransfer(object):
     version_dict = {9: "HTTP/0.9", 10: "HTTP/1.0", 11: "HTTP/1.1"}
 

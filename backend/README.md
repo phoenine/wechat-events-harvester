@@ -36,7 +36,7 @@ backend/
 ├── devtools/                 # 本地调试/辅助开发脚本
 ├── main.py                   # 进程启动入口
 ├── web.py                    # FastAPI 应用入口
-└── config.example.yaml       # 配置模板
+└── .env                      # 运行环境变量配置
 ```
 
 ## 4. 运行前准备
@@ -54,17 +54,15 @@ playwright install
 playwright install firefox
 ```
 
-### 4.3 配置文件
+### 4.3 配置
 
-```bash
-cp config.example.yaml config.yaml
-```
-
-同时建议配置 `.env`（或系统环境变量）：
+请配置 `.env`（或系统环境变量）：
 
 - `SUPABASE_URL`
 - `SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_KEY`
+- `PORT` / `LOG_LEVEL` / `LOG_FILE`
+- `ENABLE_JOB` / `AUTO_RELOAD` / `THREADS`
 - `USERNAME` / `PASSWORD`（初始化管理员账号）
 
 ## 5. 启动方式

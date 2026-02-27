@@ -14,9 +14,12 @@ from apis.sys_info import router as sys_info_router
 from apis.tags import router as tags_router
 from apis.events import router as events_router
 
-from core.common.config import cfg
+from core.common.app_settings import settings
+from core.common.log import configure_logger
 from core.common.base import VERSION, API_BASE
 from core.common.utils import TaskQueue
+
+configure_logger(level=settings.log_level, log_file=settings.log_file)
 
 
 @asynccontextmanager
@@ -32,7 +35,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="WeRSS API",
+    title="WxHarvester API",
     description="微信公众号文章采集服务API文档",
     version="1.0.0",
     docs_url="/api/docs",  # 指定文档路径
@@ -68,7 +71,7 @@ async def add_custom_header(request: Request, call_next):
     response.headers["X-Version"] = VERSION
     response.headers["X-Powered-By"] = "Phoenine"
     response.headers["GITHUB"] = "https://github.com/phoenine/wechat-events-harvester"
-    response.headers["Server"] = cfg.get("app_name", "WeRSS")
+    response.headers["Server"] = settings.app_name
     return response
 
 

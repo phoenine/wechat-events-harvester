@@ -3,7 +3,7 @@ from time import sleep
 import random
 
 from core.common.log import logger
-from core.common.config import cfg
+from core.common.runtime_settings import runtime_settings
 from driver.wx.service import fetch_article as wx_fetch_article
 from core.articles import article_repo
 from core.common.status import DataStatus as DATA_STATUS
@@ -33,7 +33,8 @@ def fetch_articles_without_content():
             logger.info(f"正在处理文章: {article.get('title')}, URL: {url}")
 
             # 获取内容（同步方式）
-            if cfg.get("gather.content_mode", "web"):
+            content_mode = runtime_settings.get_sync("gather.content_mode", "web")
+            if str(content_mode).strip().lower() == "web":
                 env = wx_fetch_article(url)
                 if env.get("ok"):
                     content_data = env.get("data") or {}
@@ -77,10 +78,10 @@ task_queue = TaskQueue
 
 
 def start_sync_content():
-    if not cfg.get("gather.content_auto_check", False):
+    if not runtime_settings.get_bool_sync("gather.content_auto_check", False):
         logger.warning("自动检查并同步文章内容功能未启用")
         return
-    interval = int(cfg.get("gather.content_auto_interval", 1))  # 每隔多少分钟
+    interval = runtime_settings.get_int_sync("gather.content_auto_interval", 1)  # 每隔多少分钟
     cron_exp = f"*/{interval} * * * *"
     task_queue.clear_queue()
     scheduler.clear_all_jobs()

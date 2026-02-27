@@ -98,29 +98,71 @@ class LockManager:
         - 创建失败（文件已存在）表示锁已被占用。
         - 其他异常会打印警告并返回失败。
         """
-        try:
-            dirpath = os.path.dirname(self.lock_file_path)
-            if dirpath:
-                os.makedirs(dirpath, exist_ok=True)
+        def _create_lock_file() -> bool:
             pid = os.getpid()
             ts = time.time()
-
             flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
             fd = os.open(self.lock_file_path, flags)
             with os.fdopen(fd, "w") as f:
                 f.write(f"{pid},{ts}")
-
             self._owner_pid = pid
             self._owner_ts = ts
             return True
+
+        try:
+            dirpath = os.path.dirname(self.lock_file_path)
+            if dirpath:
+                os.makedirs(dirpath, exist_ok=True)
+            return _create_lock_file()
         except FileExistsError:
-            # 文件已存在，锁被占用，抢锁失败
+            # 文件已存在时，先判断是否为失效锁；失效则清理后重试一次
+            try:
+                if not self.is_locked():
+                    return _create_lock_file()
+            except FileExistsError:
+                pass
+            except Exception:
+                pass
             self._owner_pid = None
             self._owner_ts = None
             return False
         except Exception as e:
             logger.warning(f"创建锁失败: {str(e)}")
             return False
+
+    def debug_snapshot(self) -> dict:
+        """返回当前锁文件快照，便于排障。"""
+        snap = {
+            "path": self.lock_file_path,
+            "exists": os.path.exists(self.lock_file_path),
+            "owner_pid": None,
+            "owner_ts": None,
+            "age_seconds": None,
+            "is_locked": False,
+        }
+        try:
+            if not snap["exists"]:
+                return snap
+            with open(self.lock_file_path, "r") as f:
+                content = (f.read() or "").strip()
+            parts = content.split(",") if content else []
+            if len(parts) >= 1:
+                try:
+                    snap["owner_pid"] = int(parts[0])
+                except Exception:
+                    snap["owner_pid"] = parts[0]
+            if len(parts) >= 2:
+                try:
+                    ts = float(parts[1])
+                    snap["owner_ts"] = ts
+                    snap["age_seconds"] = round(time.time() - ts, 3)
+                except Exception:
+                    snap["owner_ts"] = parts[1]
+            snap["is_locked"] = self.is_locked()
+            return snap
+        except Exception as e:
+            snap["error"] = str(e)
+            return snap
 
     def release(self) -> bool:
         """

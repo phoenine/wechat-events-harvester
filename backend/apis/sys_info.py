@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from typing import Dict, Any
 from core.integrations.supabase.auth import get_current_user
 from schemas import success_response, error_response, API_VERSION
-from core.common.config import cfg
+from core.common.app_settings import settings
 from jobs.wechat_accounts import TaskQueue
 from driver.wx.service import get_state as wx_get_state, get_session_info as wx_get_session_info
 from driver.wx.state import LoginState
@@ -26,8 +26,8 @@ async def get_base_info() -> Dict[str, Any]:
             "api_version": API_VERSION,
             "core_version": CORE_VERSION,
             "ui": {
-                "name": cfg.get("server.name", ""),
-                "web_name": cfg.get("server.web_name", "WeRss公众号订阅平台"),
+                "name": settings.server_name,
+                "web_name": settings.web_name,
             },
         }
         return success_response(data=base_info)

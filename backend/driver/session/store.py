@@ -4,7 +4,7 @@ import json
 import os
 from typing import Any, Dict, List, Optional
 
-from core.common.config import cfg
+from core.common.app_settings import settings
 from core.common.file import FileCrypto
 
 
@@ -15,7 +15,7 @@ class KeyStore:
 
     def __init__(self):
         # lic_key 用于本地加密密钥；默认值仅用于开发环境
-        self._crypto = FileCrypto(cfg.get("safe.lic_key", "store.csol.store.werss"))
+        self._crypto = FileCrypto(settings.safe_lic_key)
 
     def _write_json(self, obj: Any) -> None:
         # 将对象序列化为 JSON 字符串，使用 utf-8 编码写入加密文件

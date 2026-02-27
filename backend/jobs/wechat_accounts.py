@@ -6,17 +6,10 @@ from core.feeds import feed_repo
 from core.feeds.collector import collect_feed_articles
 from core.common.log import logger
 from core.common.task import TaskScheduler
-from core.common.config import cfg
+from core.common.runtime_settings import runtime_settings
 from core.common.utils import TaskQueue
 from core.message_tasks.model import MessageTask
 from jobs.webhook import web_hook
-
-# 每隔多少秒执行一次，配置缺失或异常时回退到 60 秒
-try:
-    INTERVAL: int = int(cfg.get("interval", 60) or 60)
-except Exception:
-    INTERVAL = 60
-
 
 def fetch_all_article():
     logger.info("开始更新")
@@ -51,12 +44,13 @@ def do_job(mp: Any = None, task: Optional[MessageTask] = None) -> None:
         mp.get("mp_name") if isinstance(mp, dict) else None
     )
     try:
+        interval = runtime_settings.get_int_sync("interval", 60)
         result = collect_feed_articles(
             mp,
             on_article=UpdateArticle,
             on_finish=Update_Over,
             max_page=1,
-            interval=INTERVAL,
+            interval=interval,
         )
         articles = result.get("articles") or []
         count = int(result.get("count", 0))

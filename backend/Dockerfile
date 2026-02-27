@@ -117,8 +117,6 @@ RUN playwright install && \
 # 复制应用代码
 COPY . .
 
-# 复制配置文件
-COPY config.example.yaml config.yaml
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 

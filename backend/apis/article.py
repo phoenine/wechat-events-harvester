@@ -3,7 +3,6 @@ from core.integrations.supabase.auth import get_current_user
 from core.articles import article_repo
 from core.feeds import feed_repo
 from schemas import success_response, error_response, format_search_kw
-from core.common.config import cfg
 from core.common.log import logger
 from typing import Optional, List, Dict, Any, cast
 

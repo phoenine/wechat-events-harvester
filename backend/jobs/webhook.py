@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from core.common.lax import TemplateParser
 from datetime import datetime
 from core.common.log import logger
-from core.common.config import cfg
+from core.common.runtime_settings import runtime_settings
 from core.articles.content_format import format_content
 
 
@@ -87,7 +87,7 @@ def call_webhook(hook: MessageWebHook) -> str:
     template_needs_content = "content" in template.lower()
 
     # 根据content_format处理内容
-    content_format = cfg.get("webhook.content_format", "html")
+    content_format = runtime_settings.get_sync("webhook.content_format", "html")
     logger.info(f"Content将以{content_format}格式发送")
     processed_articles = []
     for article in hook.articles:

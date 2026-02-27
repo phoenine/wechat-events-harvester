@@ -1,35 +1,60 @@
 import threading
 import asyncio
+import argparse
 import uvicorn
 
-from dotenv import load_dotenv
-load_dotenv()
-
-from core.common.config import cfg
+from core.common.app_settings import settings
+from core.common.log import configure_logger
 from core.common.log import logger
+from core.common.base import VERSION, API_BASE
+
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-job", help="启动任务", default=False)
+    parser.add_argument("-init", help="初始化数据库,初始化用户", default=False)
+    return parser.parse_known_args()[0]
+
+
+def log_app_banner() -> None:
+    logger.info(f"名称:{settings.app_name}\n版本:{VERSION} API_BASE:{API_BASE}")
 
 
 if __name__ == "__main__":
-    if cfg.args.init == "True":
+    args = parse_args()
+    configure_logger(level=settings.log_level, log_file=settings.log_file)
+    log_app_banner()
+    if args.init == "True":
         import init_sys as init
 
         asyncio.run(init.init())
-    if cfg.args.job == "True" and cfg.get("server.enable_job", False):
+    if args.job == "True" and settings.enable_job:
         from jobs.wechat_accounts import start_all_task
 
         threading.Thread(target=start_all_task, daemon=False).start()
     else:
         logger.warning("未开启定时任务")
     logger.info("启动服务器")
-    AutoReload = cfg.get("server.auto_reload", False)
-    thread = cfg.get("server.threads", 1)
-    uvicorn.run(
-        "web:app",
-        host="0.0.0.0",
-        port=int(cfg.get("port", 38001)),
-        reload=AutoReload,
-        reload_dirs=["core", "web_ui"],
-        reload_excludes=["web_ui", "data"],
-        workers=thread,
-    )
+    auto_reload = settings.auto_reload
+    workers = settings.threads
+    if auto_reload and workers > 1:
+        logger.warning("AUTO_RELOAD=True 时 workers 必须为 1，已自动降为 1")
+        workers = 1
+
+    run_kwargs = {
+        "app": "web:app",
+        "host": "0.0.0.0",
+        "port": settings.port,
+        "workers": workers,
+    }
+    if auto_reload:
+        run_kwargs.update(
+            {
+                "reload": True,
+                "reload_dirs": ["core", "web_ui"],
+                "reload_excludes": ["web_ui", "data"],
+            }
+        )
+
+    uvicorn.run(**run_kwargs)
     pass

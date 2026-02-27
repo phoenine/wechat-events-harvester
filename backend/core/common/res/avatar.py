@@ -1,4 +1,4 @@
-from core.common.config import cfg
+from core.common.runtime_settings import runtime_settings
 from core.common.log import logger
 import os
 import uuid
@@ -11,7 +11,7 @@ os.makedirs(avatar_dir, exist_ok=True)
 
 
 def save_avatar_locally(avatar_url):
-    if not cfg.get("local_avatar", False):
+    if not runtime_settings.get_bool_sync("local_avatar", False):
         return avatar_url
     if not avatar_url:
         return None

@@ -4,10 +4,9 @@ from loguru import logger
 
 
 def configure_logger(level: str | None = None, log_file: str | None = None):
-    level = str(level or os.getenv("LOG_LEVEL", "INFO")).upper()
-    log_file = log_file if log_file is not None else os.getenv("LOG_FILE", "")
+    level = str(level or "INFO").upper()
+    log_file = str(log_file).strip() if log_file is not None else ""
 
-    # 清理默认 sink，避免重复初始化导致重复输出
     logger.remove()
 
     logger.add(
@@ -18,8 +17,11 @@ def configure_logger(level: str | None = None, log_file: str | None = None):
     )
 
     if log_file:
+        log_dir = os.path.dirname(log_file)
+        if log_dir:
+            os.makedirs(log_dir, exist_ok=True)
         logger.add(
-            f"{log_file}.log",
+            log_file,
             level=level,
             rotation="1 MB",
             retention=7,

@@ -1,5 +1,5 @@
 from core.articles import article_repo
-from core.common.config import DEBUG, cfg
+from core.common.app_settings import settings
 from core.common.log import logger
 from core.common.utils.async_tools import run_sync
 from core.integrations.supabase.storage import supabase_storage_articles
@@ -85,7 +85,7 @@ def _upload_article_images(article: dict) -> dict:
 def UpdateArticle(art: dict, check_exist: bool = False):
     """更新文章"""
     mps_count = 0
-    if DEBUG:
+    if settings.debug:
         pass
     try:
         art = _upload_article_images(dict(art))

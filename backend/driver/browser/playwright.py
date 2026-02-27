@@ -28,6 +28,7 @@ class PlaywrightController:
         self.page = None
         self.isClose = True
         self._lock = threading.Lock()  # 实例级线程锁保护状态
+        self._driver_thread_id = None
 
     def _is_browser_installed(self, browser_name):
         """检查指定浏览器是否已安装"""
@@ -63,16 +64,25 @@ class PlaywrightController:
                     if self.page is not None and self.isClose is False:
                         return self.page
 
+                    current_tid = threading.get_ident()
+                    # Playwright sync driver 不能跨线程复用；线程切换时强制重建
+                    if (
+                        self.driver is not None
+                        and self._driver_thread_id is not None
+                        and self._driver_thread_id != current_tid
+                    ):
+                        self._unsafe_cleanup_locked()
+
                     if bool(os.getenv("NOT_HEADLESS", False)):
                         headless = False
                     if self.driver is None:
                         self.driver = sync_playwright().start()
-
-                    browser_type = self.driver.firefox  # 统一使用 Firefox
+                        self._driver_thread_id = current_tid
 
                     # 轻量重试 1 次（总计 2 次），首次失败会完整清理并重建 driver
                     for i in range(2):
                         try:
+                            browser_type = self.driver.firefox  # 统一使用 Firefox
                             self.browser = browser_type.launch(
                                 headless=headless,
                                 args=[
@@ -114,6 +124,7 @@ class PlaywrightController:
                                 self._unsafe_cleanup_locked()
                             finally:
                                 self.driver = sync_playwright().start()
+                                self._driver_thread_id = current_tid
         except Exception as e:
             # 交由上层感知，同时保证本实例资源释放
             with self._lock:
@@ -150,6 +161,15 @@ class PlaywrightController:
     def add_cookie(self, cookie):
         """添加单条Cookie"""
         self.add_cookies([cookie])
+
+    def get_cookies(self):
+        """获取当前上下文 cookies，供会话持久化使用。"""
+        if self.context is None:
+            return []
+        try:
+            return self.context.cookies()
+        except Exception:
+            return []
 
     def _get_anti_crawler_config(self, mobile_mode=False):
         """获取反爬虫相关配置"""
@@ -337,6 +357,7 @@ class PlaywrightController:
                 except Exception:
                     pass
                 self.driver = None
+            self._driver_thread_id = None
             self.isClose = True
         except Exception:
             # 故意吞掉异常，保证清理流程不中断

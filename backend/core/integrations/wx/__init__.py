@@ -2,7 +2,7 @@ from core.integrations.wx.base import WxGather
 from core.integrations.wx.modes.api import MpsApi
 from core.integrations.wx.modes.app import MpsAppMsg
 from core.integrations.wx.modes.web import MpsWeb
-from core.common.config import cfg
+from core.common.runtime_settings import runtime_settings
 from core.common.log import logger
 
 __all__ = [
@@ -22,7 +22,7 @@ def search_Biz(kw: str = "", limit: int = 10, offset: int = 0):
 
 def create_gather(mode: str | None = None, is_add: bool = False):
     """根据配置或显式 mode 创建采集器实例。"""
-    selected_mode = str(mode or cfg.get("gather.model", "app")).strip().lower()
+    selected_mode = str(mode or runtime_settings.get_sync("gather.model", "app")).strip().lower()
     if selected_mode == "api":
         return MpsApi(is_add=is_add)
     if selected_mode == "web":

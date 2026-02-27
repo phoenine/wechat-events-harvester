@@ -2,7 +2,6 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
 from schemas import success_response, error_response
 from core.common.log import logger
-from core.common.config import set_config, cfg
 from core.integrations.supabase.auth import (
     get_current_user,
     authenticate_user_credentials,
@@ -10,7 +9,12 @@ from core.integrations.supabase.auth import (
 )
 from core.integrations.supabase.storage import SupabaseStorage
 from core.integrations.supabase.auth_session_store import auth_session_store
-from driver.wx.service import get_qr_code as wx_get_qr_code, get_state as wx_get_state, logout as wx_logout
+from driver.wx.service import (
+    get_qr_code as wx_get_qr_code,
+    get_state as wx_get_state,
+    logout as wx_logout,
+    set_current_session_id as wx_set_current_session_id,
+)
 
 
 router = APIRouter(prefix=f"/auth", tags=["认证"])
@@ -20,14 +24,11 @@ router = APIRouter(prefix=f"/auth", tags=["认证"])
 _WX_SESSION_BY_USER_ID: dict[str, str] = {}
 
 
-def ApiSuccess(data):
-    if data != None:
-        logger.info("\n登录结果:")
-        logger.info(f"Token: {data['token']}")
-        set_config("token", data["token"])
-        cfg.reload()
+def ApiSuccess(session=None, ext_data=None):
+    if session is not None:
+        logger.info("登录成功")
     else:
-        logger.info("\n登录失败, 请检查上述错误信息")
+        logger.info("登录失败, 请检查上述错误信息")
 
 
 @router.get("/qr/code", summary="获取登录二维码")
@@ -38,6 +39,10 @@ async def get_qrcode(_current_user=Depends(get_current_user)):
         session_id = await auth_session_store.create_session(
             user_id=user_id, expires_minutes=2
         )
+        logger.info(f"[wx-auth] create_session user_id={user_id} session_id={session_id}")
+        if session_id:
+            wx_set_current_session_id(session_id)
+            logger.info(f"[wx-auth] set current_session_id={session_id}")
         if user_id and session_id:
             _WX_SESSION_BY_USER_ID[user_id] = session_id
     code_url = wx_get_qr_code(callback=ApiSuccess)
@@ -48,14 +53,16 @@ async def get_qrcode(_current_user=Depends(get_current_user)):
 
 @router.get("/qr/image", summary="获取登录二维码图片")
 async def qr_image(_current_user=Depends(get_current_user)):
-    state = wx_get_state()
+    state_env = wx_get_state()
+    state = state_env.get("data") or {}
     return success_response(state.get("has_code"))
 
 
 @router.get("/qr/url", summary="获取二维码完整访问地址")
 async def qr_url(_current_user=Depends(get_current_user)):
     sb = SupabaseStorage()
-    state = wx_get_state()
+    state_env = wx_get_state()
+    state = state_env.get("data") or {}
     if not state.get("has_code"):
         return success_response(
             {"image_url": None, "mode": "supabase" if sb.valid() else "local"}
@@ -80,9 +87,11 @@ async def qr_url(_current_user=Depends(get_current_user)):
 
 @router.get("/qr/status", summary="获取扫描状态")
 async def qr_status(_current_user=Depends(get_current_user)):
+    state_env = wx_get_state()
+    state = state_env.get("data") or {}
     return success_response(
         {
-            "login_status": wx_get_state().get("state") == "success",
+            "login_status": state.get("state") == "success",
         }
     )
 

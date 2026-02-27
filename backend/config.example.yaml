@@ -1,13 +1,13 @@
-app_name: ${APP_NAME:-we-mp-rss}
+app_name: ${APP_NAME:-wx-harvester}
 server:
   #服务名称
-  name: ${SERVER_NAME:-we-mp-rss}
+  name: ${SERVER_NAME:-wx-harvester}
   #前端显示名称
-  web_name: ${WEB_NAME:-WeRSS微信公众号订阅助手}
+  web_name: ${WEB_NAME:-WxHarvester微信公众号采集助手}
   #过期是否发送授权二维通知 默认True
   send_code: ${SEND_CODE:-True}
   #二维通知标题
-  code_title: ${CODE_TITLE:-WeRSS}
+  code_title: ${CODE_TITLE:-WxHarvester}
   #启动JOB定时任务，默认为True
   enable_job: ${ENABLE_JOB:-True}
   #代码修改自动重启服务，默认为False
@@ -75,9 +75,9 @@ safe:
   # 需要隐藏的配置信息，用逗号分隔
   hide_config: "${SAFE_HIDE_CONFIG:-token,notice.wechat,notice.feishu,notice.dingding}"
   # 授权加密KEY
-  lic_key: "${SAFE_LIC_KEY:-RACHELOS}"
+  lic_key: "${SAFE_LIC_KEY:-PHOENINE-SECURE-LIC-KEY-1234567890}"
 log:
-  #日志文件路径，默认为空字符串，表示不输出到文件。如果要输出到文件，可以指定一个路径如：/var/log/we-mp-rss.log 如果为空就不纪录
-  file: ${LOG_FILE:-}
+  #日志文件路径，默认写入 ./data/logs/wx-harvester.log，可通过 LOG_FILE 覆盖
+  file: ${LOG_FILE:-./data/logs/wx-harvester.log}
   #日志级别，默认为INFO，可选DEBUG, INFO, WARNING, ERROR, CRITICAL
   level: ${LOG_LEVEL:-INFO}

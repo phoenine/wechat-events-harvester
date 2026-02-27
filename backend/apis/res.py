@@ -5,10 +5,10 @@ import os
 import hashlib
 import time
 import json
-from core.common.config import cfg
+from core.common.app_settings import settings
 from core.common.log import logger
 
-CACHE_DIR = cfg.get("cache.dir", "data/cache")
+CACHE_DIR = settings.cache_dir
 CACHE_TTL = 3600  # 缓存过期时间1小时
 
 if not os.path.exists(CACHE_DIR):

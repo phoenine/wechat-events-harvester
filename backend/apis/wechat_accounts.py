@@ -18,8 +18,8 @@ from core.feeds import feed_repo
 from core.feeds.collector import collect_feed_articles
 from core.integrations.wx import search_Biz
 from schemas import success_response, error_response
-from core.common.config import cfg
 from core.common.log import logger
+from core.common.runtime_settings import runtime_settings
 from core.common.res import save_avatar_locally
 from jobs.article import UpdateArticle
 from core.common.utils import TaskQueue
@@ -121,7 +121,7 @@ async def sync_wechat_account_articles(
                 detail=error_response(code=40401, message="请选择一个公众号"),
             )
 
-        sync_interval = cfg.get("sync_interval", 60)
+        sync_interval = await runtime_settings.get_int("sync_interval", 60)
         if mp.get("update_time") is None:
             mp["update_time"] = int(time.time()) - sync_interval
         time_span = int(time.time()) - int(mp.get("update_time", 0))
@@ -288,7 +288,7 @@ async def create_wechat_account(
 
         # 在这里实现第一次添加时获取公众号文章
         if not existing_feed:
-            max_page = int(cfg.get("max_page", "2"))
+            max_page = await runtime_settings.get_int("max_page", 2)
             TaskQueue.add_task(
                 collect_feed_articles,
                 feed,

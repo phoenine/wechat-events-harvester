@@ -3,6 +3,7 @@ import uuid
 import httpx
 
 from core.integrations.supabase.settings import settings
+from core.common.log import logger
 
 
 class SupabaseStorage:
@@ -43,6 +44,10 @@ class SupabaseStorage:
             content=data,
         )
         if resp.status_code not in (200, 201):
+            logger.error(
+                f"[supabase-storage] upload failed bucket={self.bucket} path={path} "
+                f"status={resp.status_code} body={resp.text[:300]}"
+            )
             raise Exception(resp.text)
         # 返回可访问 URL，而不是对象路径
         try:
@@ -77,6 +82,9 @@ class SupabaseStorage:
         if "{uuid}" in path:
             path = path.format(uuid=str(uuid.uuid4()))
 
+        logger.info(
+            f"[supabase-storage] upload_qr bucket={self.bucket} path={path} bytes={len(data or b'')}"
+        )
         url = await self.upload_bytes(path, data, "image/png")
 
         return {"path": path, "url": url}
