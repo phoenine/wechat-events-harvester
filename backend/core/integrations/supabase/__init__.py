@@ -53,8 +53,6 @@ from core.integrations.supabase.auth import (
     SupabaseAuthManager,
     get_current_user,
     get_current_user_optional,
-    pwd_context,
-    clear_user_cache,
 )
 from core.integrations.supabase.storage import (
     supabase_storage_qr,
@@ -71,8 +69,6 @@ __all__ = [
     "SupabaseAuthManager",
     "get_current_user",
     "get_current_user_optional",
-    "pwd_context",
-    "clear_user_cache",
     "supabase_storage_qr",
     "supabase_storage_avatar",
     "supabase_storage_articles",

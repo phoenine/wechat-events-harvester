@@ -94,8 +94,7 @@ python main.py -job True -init True
 项目包含 `Dockerfile` 与 `entrypoint.sh`，默认会执行：
 
 ```bash
-python init_sys.py
-python main.py
+python main.py -job True -init True
 ```
 
 ## 6. API 文档
@@ -145,4 +144,3 @@ rg "APIRouter\\(|@router" apis
 - Playwright 与会话状态对抓取流程影响较大，建议在稳定网络和固定环境下运行。
 - 生产环境请显式配置 CORS 白名单、Supabase 凭据与通知 Webhook。
 - 若启用会话落库，请先创建 `sql/auth_sessions.sql` 对应表结构。
-

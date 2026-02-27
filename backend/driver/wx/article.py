@@ -4,9 +4,7 @@ from core.common.log import logger
 import time
 import base64
 import re
-import os
 from datetime import datetime
-from core.common.config import cfg
 from driver.session.manager import SessionManager
 from driver.wx.schemas import WxMpSession, WxMpInfo, WxArticleInfo, WxArticleError
 
@@ -485,24 +483,6 @@ class WXArticleFetcher:
         except Exception as e:
             # 析构函数中避免抛出异常
             pass
-
-    def export_to_pdf(self, title=None):
-        """将文章内容导出为 PDF 文件
-
-        Args:
-            output_path: 输出 PDF 文件的路径（可选）
-        """
-        output_path = ""
-        try:
-            if cfg.get("export.pdf.enable", False) == False:
-                return
-            # 暂不实际导出（Firefox 不支持 page.pdf），仅在启用时预计算路径
-            if title:
-                pdf_path = cfg.get("export.pdf.dir", "./data/pdf")
-                output_path = os.path.abspath(f"{pdf_path}/{title}.pdf")
-                logger.info(f"PDF 目标路径预检：{output_path}")
-        except Exception as e:
-            logger.error(f"生成 PDF 失败: {str(e)}")
 
     def clean_article_content(self, html_content: str):
         from tools.html import htmltools

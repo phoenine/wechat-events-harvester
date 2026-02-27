@@ -3,7 +3,7 @@ from typing import Optional, List, Any
 
 from jobs.article import UpdateArticle, Update_Over
 from core.feeds import feed_repo
-from core.integrations.wx import create_gather
+from core.feeds.collector import collect_feed_articles
 from core.common.log import logger
 from core.common.task import TaskScheduler
 from core.common.config import cfg
@@ -20,68 +20,52 @@ except Exception:
 
 def fetch_all_article():
     logger.info("开始更新")
-    wx = create_gather()
+    total_count = 0
+    all_articles = []
     try:
         # 获取公众号列表（使用Supabase，同步接口）
         mps = feed_repo.sync_get_feeds()
         for item in mps:
             try:
-                # 兼容 dict / 对象两种形式
-                faker_id = getattr(item, "faker_id", None) or (
-                    item.get("faker_id") if isinstance(item, dict) else None
+                result = collect_feed_articles(
+                    item,
+                    on_article=UpdateArticle,
+                    max_page=1,
                 )
-                mp_id = getattr(item, "id", None) or (
-                    item.get("id") if isinstance(item, dict) else None
-                )
-                mp_name = getattr(item, "mp_name", None) or (
-                    item.get("mp_name") if isinstance(item, dict) else None
-                )
-                wx.get_Articles(
-                    faker_id,
-                    CallBack=UpdateArticle,
-                    Mps_id=mp_id,
-                    Mps_title=mp_name,
-                    MaxPage=1,
-                )
+                total_count += int(result.get("count", 0))
+                all_articles.extend(result.get("articles") or [])
             except Exception as e:
                 logger.error(e)
-        logger.info(wx.articles)
+        logger.info(all_articles)
     except Exception as e:
         logger.error(e)
     finally:
-        logger.info(f"所有公众号更新完成,共更新{wx.all_count()}条数据")
+        logger.info(f"所有公众号更新完成,共更新{total_count}条数据")
 
 
 def do_job(mp: Any = None, task: Optional[MessageTask] = None) -> None:
     logger.info("执行任务")
-    wx = create_gather()
+    articles = []
+    count = 0
+    mp_name = getattr(mp, "mp_name", None) or (
+        mp.get("mp_name") if isinstance(mp, dict) else None
+    )
     try:
-        # 兼容 dict / 对象两种形式
-        faker_id = getattr(mp, "faker_id", None) or (
-            mp.get("faker_id") if isinstance(mp, dict) else None
-        )
-        mp_id = getattr(mp, "id", None) or (
-            mp.get("id") if isinstance(mp, dict) else None
-        )
-        mp_name = getattr(mp, "mp_name", None) or (
-            mp.get("mp_name") if isinstance(mp, dict) else None
-        )
-        wx.get_Articles(
-            faker_id,
-            CallBack=UpdateArticle,
-            Mps_id=mp_id,
-            Mps_title=mp_name,
-            MaxPage=1,
-            Over_CallBack=Update_Over,
+        result = collect_feed_articles(
+            mp,
+            on_article=UpdateArticle,
+            on_finish=Update_Over,
+            max_page=1,
             interval=INTERVAL,
         )
+        articles = result.get("articles") or []
+        count = int(result.get("count", 0))
     except Exception as e:
         logger.error(e)
     finally:
-        count = wx.all_count()
         from jobs.webhook import MessageWebHook
 
-        tms = MessageWebHook(task=task, feed=mp, articles=wx.articles)
+        tms = MessageWebHook(task=task, feed=mp, articles=articles)
         web_hook(tms)
         task_id = getattr(task, "id", "?")
         logger.success(f"任务({task_id})[{mp_name}]执行成功,{count}成功条数")

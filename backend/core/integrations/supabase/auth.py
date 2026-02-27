@@ -1,5 +1,4 @@
 import os
-import bcrypt
 from typing import Optional, Dict, Any
 
 from fastapi import Depends, HTTPException, status
@@ -294,49 +293,3 @@ async def authenticate_user_credentials(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"认证失败: {str(e)}",
         )
-
-
-class PasswordHasher:
-    """密码哈希工具类"""
-
-    @staticmethod
-    def verify(plain_password: str, hashed_password: str) -> bool:
-        """验证密码是否匹配哈希"""
-        try:
-            return bcrypt.checkpw(
-                plain_password.encode("utf-8"),
-                hashed_password.encode("utf-8"),
-            )
-        except (ValueError, TypeError):
-            return False
-
-    @staticmethod
-    def hash(password: str) -> str:
-        """生成密码哈希"""
-        return bcrypt.hashpw(
-            password.encode("utf-8"),
-            bcrypt.gensalt(),
-        ).decode("utf-8")
-
-
-# 全局密码哈希上下文
-pwd_context = PasswordHasher()
-
-# 用户缓存字典（用于缓存用户信息）
-_user_cache: Dict[str, Dict[str, Any]] = {}
-
-
-def clear_user_cache(username: str) -> None:
-    """清除用户缓存"""
-    if username in _user_cache:
-        del _user_cache[username]
-
-
-def get_user_from_cache(username: str) -> Optional[Dict[str, Any]]:
-    """从缓存获取用户"""
-    return _user_cache.get(username)
-
-
-def set_user_cache(username: str, user_data: Dict[str, Any]) -> None:
-    """设置用户缓存"""
-    _user_cache[username] = user_data

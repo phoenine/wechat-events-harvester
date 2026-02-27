@@ -1,4 +1,3 @@
 #!/bin/sh
 set -e
-python init_sys.py
-python main.py
+exec python main.py -job True -init True

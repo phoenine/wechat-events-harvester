@@ -15,7 +15,6 @@ class ArticleBase(BaseModel):
     publish_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
-    is_export: Optional[int] = None
 
 
 class Article(ArticleBase):

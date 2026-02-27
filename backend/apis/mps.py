@@ -15,13 +15,14 @@ from fastapi.responses import FileResponse
 from fastapi.background import BackgroundTasks
 from core.integrations.supabase.auth import get_current_user
 from core.feeds import feed_repo
+from core.feeds.collector import collect_feed_articles
 from core.integrations.wx import search_Biz
 from models import success_response, error_response
 from core.common.config import cfg
+from core.common.log import logger
 from core.common.res import save_avatar_locally
 from jobs.article import UpdateArticle
 from core.common.utils import TaskQueue
-from core.integrations.wx import create_gather
 
 
 router = APIRouter(prefix=f"/mps", tags=["公众号管理"])
@@ -129,23 +130,14 @@ async def update_mps(
                     data={"time_span": time_span},
                 ),
             )
-        result = []
-
         def UpArt(mp_data):
-            from core.common.log import logger
-
             try:
-                wx = create_gather()
-                wx.get_Articles(
-                    mp_data.get("faker_id"),
-                    Mps_id=mp_data.get("id"),
-                    Mps_title=mp_data.get("mp_name"),
-                    CallBack=UpdateArticle,
+                collect_feed_articles(
+                    mp_data,
+                    on_article=UpdateArticle,
                     start_page=start_page,
-                    MaxPage=end_page,
+                    max_page=end_page,
                 )
-                # 注意：此处的 result 是闭包外局部变量，线程更新不会体现在 HTTP 返回
-                # 维持原有行为，不在此修复
             except Exception as e:
                 logger.error(f"更新公众号文章线程异常: {e}")
 
@@ -154,7 +146,7 @@ async def update_mps(
         threading.Thread(target=UpArt, args=(mp,)).start()
 
         return success_response(
-            {"time_span": time_span, "list": result, "total": len(result), "mps": mp}
+            {"time_span": time_span, "list": [], "total": 0, "mps": mp}
         )
     except Exception as e:
         logger.info(f"更新公众号文章: {str(e)}", e)
@@ -290,14 +282,11 @@ async def add_mp(
         # 在这里实现第一次添加时获取公众号文章
         if not existing_feed:
             max_page = int(cfg.get("max_page", "2"))
-            wx = create_gather()
             TaskQueue.add_task(
-                wx.get_Articles,
-                faker_id=feed["faker_id"],
-                Mps_id=feed["id"],
-                CallBack=UpdateArticle,
-                MaxPage=max_page,
-                Mps_title=feed["mp_name"],
+                collect_feed_articles,
+                feed,
+                on_article=UpdateArticle,
+                max_page=max_page,
             )
 
         return success_response(

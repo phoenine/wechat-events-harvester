@@ -144,7 +144,14 @@ class Config:
         self.config = self.get_config()
 
     def set(self, key: str, default: Any = None) -> None:
-        self.config[key] = default
+        # 支持通过点号路径写入嵌套配置（如 server.name）
+        keys = key.split(".") if isinstance(key, str) else [key]
+        current = self.config
+        for k in keys[:-1]:
+            if not isinstance(current.get(k), dict):
+                current[k] = {}
+            current = current[k]
+        current[keys[-1]] = default
         self.save_config()
 
     def __fix(self, v: str):
