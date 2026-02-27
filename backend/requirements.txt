@@ -34,7 +34,6 @@ playwright==1.55.0
 playwright-stealth==2.0.0
 propcache==0.4.1
 psutil==7.1.0
-psycopg2-binary==2.9.10
 pycparser==2.22
 pydantic==2.12.4
 pydantic_core==2.41.5
@@ -69,3 +68,4 @@ wsproto==1.2.0
 qrcode==8.2
 tzdata==2025.2
 yarl==1.22.0
+psycopg2-binary=2.9.10

@@ -195,24 +195,35 @@ class WxService:
             # 延迟导入：避免在 wx_service import 阶段引入外部依赖
             def _on_state_change(state: str, qr_signed_url: Optional[str], error: Optional[str], expires_minutes: Optional[int]) -> None:
                 try:
-                    from core.integrations.supabase.database import db_manager
+                    from core.integrations.supabase.auth_session_store import (
+                        auth_session_store,
+                    )
 
                     # 仅当 DB 可用时写入
-                    if not db_manager.valid_session_db():
+                    if not auth_session_store.valid_session_db():
                         return
 
-                    payload = {"status": state}
+                    # 归一化为 auth_sessions.status 允许值，避免状态约束导致更新失败
+                    status_map = {
+                        LoginState.IDLE.value: "waiting",
+                        LoginState.STARTING.value: "waiting",
+                        LoginState.QR_READY.value: "waiting",
+                        LoginState.WAIT_SCAN.value: "waiting",
+                        LoginState.SUCCESS.value: "success",
+                        LoginState.EXPIRED.value: "expired",
+                        LoginState.FAILED.value: "error",
+                    }
+                    db_status = status_map.get(state, "error" if error else "waiting")
+                    payload = {"status": db_status}
                     if qr_signed_url is not None:
                         payload["qr_signed_url"] = qr_signed_url
                     if expires_minutes is not None:
                         payload["expires_minutes"] = expires_minutes
-                    if error:
-                        payload["error"] = error
 
                     # session_id 仍由 wx 驱动维护（兼容历史行为）
                     session_id = getattr(self._wx, "current_session_id", None)
                     if session_id:
-                        db_manager.update_session_sync(session_id, **payload)
+                        auth_session_store.update_session_sync(session_id, **payload)
                 except Exception:
                     # best-effort：不影响主流程
                     return

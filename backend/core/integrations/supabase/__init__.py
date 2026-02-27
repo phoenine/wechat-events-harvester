@@ -21,17 +21,17 @@ class SupabaseSettings:
 def _load_settings() -> SupabaseSettings:
     buckets = {
         "qr": BucketConfig(
-            name=os.getenv("STORAGE_QR_BUCKET", "qr"),
+            name=os.getenv("SUPABASE_QR_BUCKET", "qr"),
             path=os.getenv("SUPABASE_QR_PATH", "wx/{uuid}.png"),
             expires=int(os.getenv("SUPABASE_QR_SIGN_EXPIRES", "120")),
         ),
         "avatar": BucketConfig(
-            name=os.getenv("STORAGE_AVATAR_BUCKET", "avatar"),
+            name=os.getenv("SUPABASE_AVATAR_BUCKET", "avatar"),
             path=os.getenv("SUPABASE_AVATAR_PATH", "avatars/{uuid}.png"),
             expires=0,
         ),
         "articles": BucketConfig(
-            name=os.getenv("STORAGE_BACKUP_BUCKET", "articles"),
+            name=os.getenv("SUPABASE_ARTICLES_BUCKET", "articles"),
             path=os.getenv("SUPABASE_ARTICLE_IMAGE_PATH", "articles/{article_name}/{filename}"),
             expires=0,
         ),
@@ -60,7 +60,10 @@ from core.integrations.supabase.storage import (
     supabase_storage_articles,
     SupabaseStorage,
 )
-from core.integrations.supabase.database import db_manager, DatabaseManager
+from core.integrations.supabase.auth_session_store import (
+    auth_session_store,
+    AuthSessionStore,
+)
 
 __all__ = [
     "supabase_client",
@@ -73,6 +76,6 @@ __all__ = [
     "supabase_storage_avatar",
     "supabase_storage_articles",
     "SupabaseStorage",
-    "db_manager",
-    "DatabaseManager",
+    "auth_session_store",
+    "AuthSessionStore",
 ]

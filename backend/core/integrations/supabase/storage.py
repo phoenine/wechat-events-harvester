@@ -44,7 +44,13 @@ class SupabaseStorage:
         )
         if resp.status_code not in (200, 201):
             raise Exception(resp.text)
-        return path
+        # 返回可访问 URL，而不是对象路径
+        try:
+            if self.expires and self.expires > 0:
+                return await self.sign_url(path, self.expires)
+        except Exception:
+            pass
+        return self.public_url(path)
 
     async def sign_url(self, path: str, expires: int | None = None) -> str:
         ex = expires or self.expires
@@ -71,11 +77,7 @@ class SupabaseStorage:
         if "{uuid}" in path:
             path = path.format(uuid=str(uuid.uuid4()))
 
-        await self.upload_bytes(path, data, "image/png")
-        try:
-            url = await self.sign_url(path, self.expires)
-        except Exception:
-            url = self.public_url(path)
+        url = await self.upload_bytes(path, data, "image/png")
 
         return {"path": path, "url": url}
 
@@ -83,4 +85,3 @@ class SupabaseStorage:
 supabase_storage_qr = SupabaseStorage("qr")
 supabase_storage_avatar = SupabaseStorage("avatar")
 supabase_storage_articles = SupabaseStorage("articles")
-

@@ -9,7 +9,7 @@ from core.integrations.supabase.auth import (
     UserCredentials,
 )
 from core.integrations.supabase.storage import SupabaseStorage
-from core.integrations.supabase.database import db_manager
+from core.integrations.supabase.auth_session_store import auth_session_store
 from driver.wx.service import get_qr_code as wx_get_qr_code, get_state as wx_get_state, logout as wx_logout
 
 
@@ -33,9 +33,11 @@ def ApiSuccess(data):
 @router.get("/qr/code", summary="获取登录二维码")
 async def get_qrcode(_current_user=Depends(get_current_user)):
     session_id = None
-    if db_manager.valid_session_db():
+    if auth_session_store.valid_session_db():
         user_id = _current_user.get("id") or None
-        session_id = await db_manager.create_session(user_id=user_id, expires_minutes=2)
+        session_id = await auth_session_store.create_session(
+            user_id=user_id, expires_minutes=2
+        )
         if user_id and session_id:
             _WX_SESSION_BY_USER_ID[user_id] = session_id
     code_url = wx_get_qr_code(callback=ApiSuccess)
@@ -61,9 +63,9 @@ async def qr_url(_current_user=Depends(get_current_user)):
     url = state.get("wx_login_url")
     user_id = _current_user.get("id")
     session_id = _WX_SESSION_BY_USER_ID.get(user_id) if user_id else None
-    if url and session_id and db_manager.valid_session_db():
+    if url and session_id and auth_session_store.valid_session_db():
         try:
-            await db_manager.update_session(
+            await auth_session_store.update_session(
                 session_id,
                 status="waiting",
                 qr_signed_url=url,

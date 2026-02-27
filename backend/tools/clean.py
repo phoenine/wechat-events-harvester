@@ -1,4 +1,4 @@
-from core.integrations.supabase.database import sync_get_articles, sync_delete_article
+from core.articles import article_repo
 from core.common.log import logger
 
 
@@ -8,7 +8,7 @@ def clean_duplicate_articles():
     """
     try:
         # 获取所有文章
-        articles = sync_get_articles(
+        articles = article_repo.sync_get_articles(
             filters={"status": 1}, order_by="publish_time.desc"
         )
 
@@ -31,7 +31,7 @@ def clean_duplicate_articles():
         # 删除重复文章
         for duplicate in duplicates:
             logger.info(f"删除重复文章: {duplicate['title']}")
-            sync_delete_article(duplicate["id"])
+            article_repo.sync_delete_article(duplicate["id"])
 
         return (f"已清理 {len(duplicates)} 篇重复文章", len(duplicates))
     except Exception as e:

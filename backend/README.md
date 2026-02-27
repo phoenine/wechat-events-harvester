@@ -64,7 +64,6 @@ cp config.example.yaml config.yaml
 - `SUPABASE_URL`
 - `SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_KEY`
-- `SUPABASE_DB_URL`（会话表使用）
 - `USERNAME` / `PASSWORD`（初始化管理员账号）
 
 ## 5. 启动方式

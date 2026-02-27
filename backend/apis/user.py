@@ -1,4 +1,5 @@
 import os
+import re
 from typing import Dict, Any
 from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
@@ -10,6 +11,18 @@ from core.common.config import cfg
 
 
 router = APIRouter(prefix="/user", tags=["用户资料"])
+
+
+def _render_storage_path(template: str, values: dict[str, str]) -> str:
+    """渲染 storage 路径模板，避免因占位符不一致导致 KeyError。"""
+
+    def replace(match: re.Match[str]) -> str:
+        key = match.group(1)
+        if key in values:
+            return str(values[key])
+        return str(values.get("uuid", uuid4().hex))
+
+    return re.sub(r"\{([a-zA-Z0-9_]+)\}", replace, template)
 
 
 @router.get("", summary="获取当前用户资料")
@@ -84,10 +97,16 @@ async def upload_avatar(
         _, ext = os.path.splitext(file.filename or "")
         if not ext:
             ext = ".jpg"
-        object_path = supabase_storage_avatar.path.format(
-            uuid=str(uuid4()),
-            username=current_user["username"],
-            filename=file.filename or f"{current_user['username']}{ext}",
+        user_id = str(current_user.get("id") or "")
+        username = str(current_user.get("username") or user_id or "user")
+        object_path = _render_storage_path(
+            supabase_storage_avatar.path,
+            {
+                "uuid": str(uuid4()),
+                "user_id": user_id,
+                "username": username,
+                "filename": file.filename or f"{username}{ext}",
+            },
         )
 
         avatar_url = await supabase_storage_avatar.upload_bytes(
@@ -96,7 +115,6 @@ async def upload_avatar(
             content_type=file.content_type or "image/jpeg",
         )
 
-        user_id = current_user.get("id")
         if not user_id:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
