@@ -4,9 +4,9 @@ import sys
 from fastapi import APIRouter, Depends, HTTPException, status
 from typing import Dict, Any
 from core.integrations.supabase.auth import get_current_user
-from models import success_response, error_response, API_VERSION
+from schemas import success_response, error_response, API_VERSION
 from core.common.config import cfg
-from jobs.mps import TaskQueue
+from jobs.wechat_accounts import TaskQueue
 from driver.wx.service import get_state as wx_get_state, get_session_info as wx_get_session_info
 from driver.wx.state import LoginState
 
@@ -65,7 +65,7 @@ async def system_resources(
 
 
 from core.articles.lax import laxArticle
-from models import API_VERSION
+from schemas import API_VERSION
 from core.common.base import VERSION as CORE_VERSION, LATEST_VERSION
 
 # TODO : 后面优化这个接口，改成异步的

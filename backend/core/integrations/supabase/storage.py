@@ -2,7 +2,7 @@ import json
 import uuid
 import httpx
 
-from core.integrations.supabase import settings
+from core.integrations.supabase.settings import settings
 
 
 class SupabaseStorage:

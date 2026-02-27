@@ -2,7 +2,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from datetime import datetime, timezone
 from core.tags import tag_repo
-from models import success_response, error_response, TagsCreate
+from schemas import success_response, error_response, TagsCreate
 from core.integrations.supabase.auth import get_current_user
 from core.common.log import logger
 

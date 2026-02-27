@@ -2,7 +2,7 @@
 
 from core.articles.model import Article, ArticleBase
 from core.articles.repo import ArticleRepository
-from core.integrations.supabase import supabase_client
+from core.integrations.supabase.client import supabase_client
 
 
 article_repo = ArticleRepository(supabase_client)

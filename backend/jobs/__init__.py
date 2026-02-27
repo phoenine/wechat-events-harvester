@@ -1,1 +1,1 @@
-from jobs.mps import *
+from jobs.wechat_accounts import *

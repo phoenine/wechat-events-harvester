@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Body, Path, Query, status
 
 from core.common.config import cfg, set_config
 from core.integrations.supabase.auth import get_current_user
-from models import success_response, error_response, ConfigManagementCreate
+from schemas import success_response, error_response, ConfigManagementCreate
 
 
 router = APIRouter(prefix="/configs", tags=["配置管理"])

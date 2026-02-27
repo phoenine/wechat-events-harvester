@@ -230,7 +230,7 @@ class WxService:
 
             def _upload_qr_image(img_bytes: bytes) -> Optional[str]:
                 try:
-                    from core.integrations.supabase import supabase_storage_qr
+                    from core.integrations.supabase.storage import supabase_storage_qr
 
                     if not supabase_storage_qr.valid():
                         return None

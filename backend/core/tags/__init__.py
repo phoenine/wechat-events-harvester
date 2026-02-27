@@ -1,6 +1,6 @@
 """标签领域模块。"""
 
-from core.integrations.supabase import supabase_client
+from core.integrations.supabase.client import supabase_client
 from core.tags.repo import TagRepository
 from core.tags.model import Tags
 

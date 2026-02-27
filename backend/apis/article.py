@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status as fast_status, Qu
 from core.integrations.supabase.auth import get_current_user
 from core.articles import article_repo
 from core.feeds import feed_repo
-from models import success_response, error_response, format_search_kw
+from schemas import success_response, error_response, format_search_kw
 from core.common.config import cfg
 from core.common.log import logger
 from typing import Optional, List, Dict, Any, cast
@@ -238,7 +238,7 @@ async def clean_orphan_articles(_current_user: dict = Depends(get_current_user))
 @router.delete("/clean_duplicate_articles", summary="清理重复文章")
 async def clean_duplicate(_current_user: dict = Depends(get_current_user)):
     try:
-        from tools.clean import clean_duplicate_articles
+        from core.articles.cleaning import clean_duplicate_articles
 
         (msg, deleted_count) = clean_duplicate_articles()
         return success_response({"message": msg, "deleted_count": deleted_count})

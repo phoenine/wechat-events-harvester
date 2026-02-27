@@ -5,7 +5,7 @@ from typing import Optional
 from core.common.log import logger
 from core.common.utils.async_tools import run_sync
 from core.integrations.supabase.client import supabase_client
-from core.integrations.supabase import settings
+from core.integrations.supabase.settings import settings
 
 
 

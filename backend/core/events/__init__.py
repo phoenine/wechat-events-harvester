@@ -1,6 +1,6 @@
 """活动领域模块。"""
 
-from core.integrations.supabase import supabase_client
+from core.integrations.supabase.client import supabase_client
 from core.events.repo import EventsRepository
 from core.events.model import Events
 

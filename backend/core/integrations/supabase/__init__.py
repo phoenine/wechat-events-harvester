@@ -1,81 +1,11 @@
-import os
-from typing import Dict
-from dataclasses import dataclass
+"""Supabase 集成包。
 
+导入约定：
+- 业务代码请优先直接从子模块导入（client/auth/storage/auth_session_store）。
+- 包级仅暴露 settings，避免形成过宽的聚合导出面。
+"""
 
-@dataclass(frozen=True)
-class BucketConfig:
-    name: str
-    path: str
-    expires: int
+from core.integrations.supabase.settings import settings
 
+__all__ = ["settings"]
 
-@dataclass(frozen=True)
-class SupabaseSettings:
-    url: str
-    anon_key: str
-    service_key: str
-    buckets: Dict[str, BucketConfig]
-
-
-def _load_settings() -> SupabaseSettings:
-    buckets = {
-        "qr": BucketConfig(
-            name=os.getenv("SUPABASE_QR_BUCKET", "qr"),
-            path=os.getenv("SUPABASE_QR_PATH", "wx/{uuid}.png"),
-            expires=int(os.getenv("SUPABASE_QR_SIGN_EXPIRES", "120")),
-        ),
-        "avatar": BucketConfig(
-            name=os.getenv("SUPABASE_AVATAR_BUCKET", "avatar"),
-            path=os.getenv("SUPABASE_AVATAR_PATH", "avatars/{uuid}.png"),
-            expires=0,
-        ),
-        "articles": BucketConfig(
-            name=os.getenv("SUPABASE_ARTICLES_BUCKET", "articles"),
-            path=os.getenv("SUPABASE_ARTICLE_IMAGE_PATH", "articles/{article_name}/{filename}"),
-            expires=0,
-        ),
-    }
-
-    return SupabaseSettings(
-        url=os.getenv("SUPABASE_URL", "").rstrip("/"),
-        anon_key=os.getenv("SUPABASE_ANON_KEY", ""),
-        service_key=os.getenv("SUPABASE_SERVICE_KEY", ""),
-        buckets=buckets,
-    )
-
-
-settings = _load_settings()
-
-from core.integrations.supabase.client import supabase_client, SupabaseClient
-from core.integrations.supabase.auth import (
-    auth_manager,
-    SupabaseAuthManager,
-    get_current_user,
-    get_current_user_optional,
-)
-from core.integrations.supabase.storage import (
-    supabase_storage_qr,
-    supabase_storage_avatar,
-    supabase_storage_articles,
-    SupabaseStorage,
-)
-from core.integrations.supabase.auth_session_store import (
-    auth_session_store,
-    AuthSessionStore,
-)
-
-__all__ = [
-    "supabase_client",
-    "SupabaseClient",
-    "auth_manager",
-    "SupabaseAuthManager",
-    "get_current_user",
-    "get_current_user_optional",
-    "supabase_storage_qr",
-    "supabase_storage_avatar",
-    "supabase_storage_articles",
-    "SupabaseStorage",
-    "auth_session_store",
-    "AuthSessionStore",
-]

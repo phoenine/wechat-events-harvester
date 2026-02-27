@@ -32,7 +32,8 @@ backend/
 │   ├── articles|feeds|...    # 各业务领域仓储与模型
 ├── driver/                   # 浏览器与会话驱动层（Playwright/Wx）
 ├── jobs/                     # 定时任务与异步任务编排
-├── tools/                    # 辅助脚本工具
+├── ops/                      # 运维脚本与迁移相关
+├── devtools/                 # 本地调试/辅助开发脚本
 ├── main.py                   # 进程启动入口
 ├── web.py                    # FastAPI 应用入口
 └── config.example.yaml       # 配置模板
@@ -110,7 +111,7 @@ python main.py -job True -init True
 
 - `auth`：认证与二维码授权
 - `user`：用户资料与头像
-- `mps`：公众号管理与采集触发
+- `wechat-accounts`：公众号管理与采集触发（兼容旧路径 `mps`）
 - `article`：文章查询与清理
 - `message_tasks`：消息任务管理
 - `configs`：配置管理

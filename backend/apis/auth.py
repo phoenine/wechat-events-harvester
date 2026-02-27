@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordRequestForm
-from models import success_response, error_response
+from schemas import success_response, error_response
 from core.common.log import logger
 from core.common.config import set_config, cfg
 from core.integrations.supabase.auth import (

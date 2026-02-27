@@ -2,7 +2,7 @@ import os
 from typing import Optional, Dict, List, Union, Any, cast
 from supabase import create_client, Client
 
-from core.integrations.supabase import settings
+from core.integrations.supabase.settings import settings
 from core.common.log import logger
 
 

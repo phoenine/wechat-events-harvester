@@ -5,7 +5,7 @@ from core.common.log import logger
 from fastapi import APIRouter, Depends, HTTPException, status, Body, Query
 from core.integrations.supabase.auth import get_current_user
 from core.message_tasks import message_repo
-from models import success_response, error_response, MessageTaskCreate
+from schemas import success_response, error_response, MessageTaskCreate
 
 
 router = APIRouter(prefix="/message_tasks", tags=["消息任务"])
@@ -89,7 +89,7 @@ async def run_message_task(
 ):
     """执行单个消息任务详情"""
     try:
-        from jobs.mps import run
+        from jobs.wechat_accounts import run
 
         mps = {"count": 0, "list": []}
         tasks = run(task_id, isTest=isTest)
@@ -203,7 +203,7 @@ async def update_message_task(
 @router.put("/job/fresh", summary="重载任务")
 async def fresh_message_task(current_user: dict = Depends(get_current_user)):
     """重载任务"""
-    from jobs.mps import reload_job
+    from jobs.wechat_accounts import reload_job
 
     reload_job()
     return success_response(message="任务已经重载成功")

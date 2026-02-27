@@ -10,7 +10,7 @@ from fastapi.security import (
 from supabase import create_client, Client
 from pydantic import BaseModel
 
-from core.integrations.supabase import settings
+from core.integrations.supabase.settings import settings
 from core.auth.model import UserCredentials, TokenResponse
 from core.common.log import logger
 

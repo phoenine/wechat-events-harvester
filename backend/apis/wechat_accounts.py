@@ -17,7 +17,7 @@ from core.integrations.supabase.auth import get_current_user
 from core.feeds import feed_repo
 from core.feeds.collector import collect_feed_articles
 from core.integrations.wx import search_Biz
-from models import success_response, error_response
+from schemas import success_response, error_response
 from core.common.config import cfg
 from core.common.log import logger
 from core.common.res import save_avatar_locally
@@ -25,10 +25,12 @@ from jobs.article import UpdateArticle
 from core.common.utils import TaskQueue
 
 
-router = APIRouter(prefix=f"/mps", tags=["公众号管理"])
+router = APIRouter(prefix="/wechat-accounts", tags=["公众号管理"])
+legacy_router = APIRouter(prefix="/mps", tags=["公众号管理"], include_in_schema=False)
 
 
 @router.get("/search/{kw}", summary="搜索公众号")
+@legacy_router.get("/search/{kw}", summary="搜索公众号")
 async def search_mp(
     kw: str = "",
     limit: int = 10,
@@ -55,7 +57,8 @@ async def search_mp(
 
 
 @router.get("", summary="获取公众号列表")
-async def get_mps(
+@legacy_router.get("", summary="获取公众号列表")
+async def list_wechat_accounts(
     limit: int = Query(10, ge=1, le=100),
     offset: int = Query(0, ge=0),
     kw: str = Query(""),
@@ -101,7 +104,8 @@ async def get_mps(
 
 
 @router.get("/update/{mp_id}", summary="更新公众号文章")
-async def update_mps(
+@legacy_router.get("/update/{mp_id}", summary="更新公众号文章")
+async def sync_wechat_account_articles(
     mp_id: str,
     start_page: int = 0,
     end_page: int = 1,
@@ -157,6 +161,7 @@ async def update_mps(
 
 
 @router.get("/{mp_id}", summary="获取公众号详情")
+@legacy_router.get("/{mp_id}", summary="获取公众号详情")
 async def get_mp(
     mp_id: str,
 ):
@@ -177,6 +182,7 @@ async def get_mp(
 
 
 @router.post("/by_article", summary="通过文章链接获取公众号详情")
+@legacy_router.post("/by_article", summary="通过文章链接获取公众号详情")
 async def get_mp_by_article(
     url: str = Query(..., min_length=1), _current_user: dict = Depends(get_current_user)
 ):
@@ -214,7 +220,8 @@ async def get_mp_by_article(
 
 
 @router.post("", summary="添加公众号")
-async def add_mp(
+@legacy_router.post("", summary="添加公众号")
+async def create_wechat_account(
     mp_name: str = Body(..., min_length=1, max_length=255),
     mp_cover: str = Body(None, max_length=255),
     mp_id: str = Body(None, max_length=255),
@@ -312,6 +319,7 @@ async def add_mp(
 
 
 @router.delete("/{mp_id}", summary="删除订阅号")
+@legacy_router.delete("/{mp_id}", summary="删除订阅号")
 async def delete_mp(
     mp_id: str,
     _current_user: dict = Depends(get_current_user),

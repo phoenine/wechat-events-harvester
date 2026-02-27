@@ -14,12 +14,6 @@ server:
   auto_reload: ${AUTO_RELOAD:-False}
   #最大线程数 默认2个线程，不建议超过4个线程
   threads: ${THREADS:-4}
-
-#数据库连接 例如db:  mysql+pymysql://<username>:<password>@<host>/we-rss?charset=utf8mb4
-#PostgreSQL 连接示例: postgresql://<username>:<password>@<host>/<database>
-#需要注意数据库连接字符串的格式，如果是sqlite数据库，则使用sqlite:///路径的形式，如果是mysql数据库，
-#则使用mysql+pymysql://<username>:<password>@<host>/<database>?charset=<数据库编码>的形式
-db: ${DB:-sqlite:///data/db.db}
 #通知
 notice:
   #通知方式，可选dingding、wechat、feishu、custom
@@ -27,8 +21,6 @@ notice:
   wechat: "${WECHAT_WEBHOOK}"
   feishu: "${FEISHU_WEBHOOK}"
   custom: "${CUSTOM_WEBHOOK}"
-
-secret: ${SECRET_KEY:-we-mp-rss}
 user_agent: ${USER_AGENT:-Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36/WeRss}
 
 #定时任务执行每篇稿件间隔时间 单位秒 默认10s 允许值 1-60秒之间
@@ -36,7 +28,7 @@ interval: ${SPAN_INTERVAL:- 10}
 
 webhook:
   #文章内容的发送格式(默认使用html格式，可选text、markdown)
-  content_format: ${WEBHOOK.CONTENT_FORMAT:-html}
+  content_format: ${WEBHOOK_CONTENT_FORMAT:-html}
 
 #API服务端口
 port: ${PORT:-8001}
@@ -46,32 +38,42 @@ debug: ${DEBUG:-False}
 #最大页数 第一次添加 采集的页数默认5页
 max_page: ${MAX_PAGE:-5}
 
+#手动触发单个公众号更新的最小时间间隔（秒）
+sync_interval: ${SYNC_INTERVAL:-60}
+
 #登录会话有效时长 单位分钟 默认4320分钟 3天
 token_expire_minutes: ${TOKEN_EXPIRE_MINUTES:-4320}
 
 cache:
   #缓存目录，默认为./data/cache
-  dir: ${CACHE.DIR:-./data/cache}
+  dir: ${CACHE_DIR:-./data/cache}
 
 article:
   #是否真实删除文章，默认False，如果为True，则会删除数据库中的记录
-  true_delete: ${ARTICLE.TRUE_DELETE:-False}
+  true_delete: ${ARTICLE_TRUE_DELETE:-False}
+
+#是否将公众号头像下载到本地（默认关闭，直接使用远程URL）
+local_avatar: ${LOCAL_AVATAR:-False}
+
+avatar:
+  #头像上传大小限制（字节）
+  max_bytes: ${AVATAR_MAX_BYTES:-5242880}
 
 gather:
   #是否采集内容  默认True
-  content: ${GATHER.CONTENT:-True}
+  content: ${GATHER_CONTENT:-True}
   #采集模式，web模式（可采集到发布链接)，api模式（可采集临时链接），app模式（采集最新消息）
-  model: ${GATHER.MODEL:-app}
+  model: ${GATHER_MODEL:-app}
   #是否自动检查未采集文章内容，默认False
-  content_auto_check: ${GATHER.CONTENT_AUTO_CHECK:-False}
+  content_auto_check: ${GATHER_CONTENT_AUTO_CHECK:-False}
   #自动检查未采集文章内容的时间间隔 单位秒默认59分钟 允许值 1-59分钟之间 默认59分钟
-  content_auto_interval: ${GATHER.CONTENT_AUTO_INTERVAL:-59}
+  content_auto_interval: ${GATHER_CONTENT_AUTO_INTERVAL:-59}
   #内容修正模式，默认web 允许值 web、api
-  content_mode: ${GATHER.CONTENT_MODE:-web}
+  content_mode: ${GATHER_CONTENT_MODE:-web}
 #安全配置
 safe:
-  # 需要隐藏的配置信息，用逗号分隔 如：db,secret,token等
-  hide_config: "${SAFE_HIDE_CONFIG:-db,secret,token,notice.wechat,notice.feishu,notice.dingding}"
+  # 需要隐藏的配置信息，用逗号分隔
+  hide_config: "${SAFE_HIDE_CONFIG:-token,notice.wechat,notice.feishu,notice.dingding}"
   # 授权加密KEY
   lic_key: "${SAFE_LIC_KEY:-RACHELOS}"
 log:

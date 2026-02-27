@@ -15,7 +15,7 @@ if __name__ == "__main__":
 
         asyncio.run(init.init())
     if cfg.args.job == "True" and cfg.get("server.enable_job", False):
-        from jobs.mps import start_all_task
+        from jobs.wechat_accounts import start_all_task
 
         threading.Thread(target=start_all_task, daemon=False).start()
     else:

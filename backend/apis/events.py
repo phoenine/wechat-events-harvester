@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 from core.integrations.supabase.auth import get_current_user
 from core.articles import article_repo
 from core.events import event_repo
-from models import success_response, error_response, EventCreate, EventUpdate
+from schemas import success_response, error_response, EventCreate, EventUpdate
 from core.common.log import logger
 
 

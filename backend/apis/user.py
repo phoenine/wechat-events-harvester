@@ -3,7 +3,7 @@ import re
 from typing import Dict, Any
 from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
-from models import success_response, error_response
+from schemas import success_response, error_response
 from core.integrations.supabase.auth import get_current_user
 from core.profiles import profile_repo
 from core.integrations.supabase.storage import supabase_storage_avatar

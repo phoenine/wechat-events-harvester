@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from apis.auth import router as auth_router
 from apis.user import router as user_router
 from apis.article import router as article_router
-from apis.mps import router as wx_router
+from apis.wechat_accounts import router as wx_router, legacy_router as wx_legacy_router
 from apis.res import router as res_router
 from apis.config_management import router as config_router
 from apis.message_task import router as task_router
@@ -78,6 +78,7 @@ api_router.include_router(auth_router)
 api_router.include_router(user_router)
 api_router.include_router(article_router)
 api_router.include_router(wx_router)
+api_router.include_router(wx_legacy_router)
 api_router.include_router(config_router)
 api_router.include_router(task_router)
 api_router.include_router(sys_info_router)
