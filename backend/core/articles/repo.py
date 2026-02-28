@@ -221,5 +221,3 @@ class ArticleRepository:
     def sync_delete_article(self, article_id: str):
         """同步删除文章（用于兼容同步代码）"""
         return run_sync(self.delete_article(article_id))
-
-

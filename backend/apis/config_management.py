@@ -14,7 +14,7 @@ async def list_configs(
     offset: int = Query(0, ge=0),
     _current_user: dict = Depends(get_current_user),
 ):
-    """获取配置项列表（DB）"""
+    """获取配置项列表"""
     try:
         total = await config_store.count()
         paginated_configs = await config_store.list(limit=limit, offset=offset)
@@ -38,7 +38,7 @@ async def get_config(
     config_key: str,
     _current_user: dict = Depends(get_current_user),
 ):
-    """获取单个配置项详情（DB）"""
+    """获取单个配置项详情"""
     try:
         row = await config_store.get(config_key)
         if not row:
@@ -58,7 +58,7 @@ async def create_config(
     config_data: ConfigManagementCreate = Body(...),
     _current_user: dict = Depends(get_current_user),
 ):
-    """创建配置项（写入DB）"""
+    """创建配置项"""
     try:
         existing = await config_store.get(config_data.config_key)
         if existing:
@@ -87,7 +87,7 @@ async def update_config(
     config_data: ConfigManagementCreate = Body(...),
     _current_user: dict = Depends(get_current_user),
 ):
-    """更新配置项（写入DB）"""
+    """更新配置项"""
     try:
         existing = await config_store.get(config_key)
         if not existing:
@@ -113,7 +113,7 @@ async def delete_config(
     config_key: str,
     _current_user: dict = Depends(get_current_user),
 ):
-    """删除配置项（DB）"""
+    """删除配置项"""
     try:
         deleted = await config_store.delete(config_key)
         if not deleted:

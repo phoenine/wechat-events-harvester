@@ -47,7 +47,7 @@ async def get_qrcode(_current_user=Depends(get_current_user)):
             _WX_SESSION_BY_USER_ID[user_id] = session_id
     code_url = wx_get_qr_code(callback=ApiSuccess)
     if session_id:
-        code_url.update({"session_id": session_id})
+        code_url = {**code_url, "session_id": session_id}
     return success_response(code_url)
 
 

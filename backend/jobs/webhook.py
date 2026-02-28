@@ -1,21 +1,45 @@
-from core.articles.model import Article
-from core.feeds.model import Feed
-from core.message_tasks.model import MessageTask
-from core.integrations.notice import notice
+import json
 from dataclasses import dataclass
-from core.common.lax import TemplateParser
 from datetime import datetime
+from typing import Any
+
+import requests
+
+from core.articles.model import Article
+from core.articles.content_format import format_content
+from core.common.lax import TemplateParser
 from core.common.log import logger
 from core.common.runtime_settings import runtime_settings
-from core.articles.content_format import format_content
+from core.feeds.model import Feed
+from core.integrations.notice import notice
+from core.message_tasks.model import MessageTask
+
+# 消息类型：0=发送到通知渠道，1=调用 Webhook
+MESSAGE_TYPE_SEND = 0
+MESSAGE_TYPE_WEBHOOK = 1
+
+DATETIME_FMT = "%Y-%m-%d %H:%M:%S"
+
+
+def _article_to_dict(article: Article | dict[str, Any]) -> dict[str, Any]:
+    """将 Article 或字典转为模板用字典, publish_time 格式化为可读时间。"""
+    if isinstance(article, dict):
+        out = dict(article)
+    else:
+        out = article.model_dump(mode="json")
+    if out.get("publish_time") is not None:
+        try:
+            out["publish_time"] = datetime.fromtimestamp(int(out["publish_time"])).strftime(DATETIME_FMT)
+        except (TypeError, ValueError, OSError):
+            pass
+    return out
 
 
 @dataclass
 class MessageWebHook:
     task: MessageTask
     feed: Feed
-    articles: list[Article]
-    pass
+    articles: list[Article | dict[str, Any]]
 
 
 def send_message(hook: MessageWebHook) -> str:
@@ -109,10 +133,8 @@ def call_webhook(hook: MessageWebHook) -> str:
         "now": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
     }
 
-    # 预处理content字段
-    import json
-
-    def process_content(content):
+    # 预处理 content 字段：JSON 转义，便于模板嵌入
+    def process_content(content: str | None) -> str:
         if content is None:
             return ""
         # 进行JSON转义处理引号
@@ -138,14 +160,10 @@ def call_webhook(hook: MessageWebHook) -> str:
     payload = parser.render(data)
     # logger.info(payload)
 
-    # 检查web_hook_url是否为空
     if not hook.task.web_hook_url:
         logger.error("web_hook_url为空")
-        return
-    # 发送webhook请求
-    import requests
+        raise ValueError("web_hook_url 未配置")
 
-    # logger.success(f"发送webhook请求{payload}")
     try:
         response = requests.post(
             hook.task.web_hook_url,
@@ -158,60 +176,19 @@ def call_webhook(hook: MessageWebHook) -> str:
         raise ValueError(f"Webhook调用失败: {str(e)}")
 
 
-def web_hook(hook: MessageWebHook):
-    """
-    根据消息类型路由到对应的处理函数
-
-    参数:
-        hook: MessageWebHook对象，包含任务、订阅源和文章信息
-
-    返回:
-        对应处理函数的返回结果
-
-    异常:
-        ValueError: 当消息类型未知时抛出
-    """
+def web_hook(hook: MessageWebHook) -> str | None:
+    """根据消息类型路由到 send_message 或 call_webhook。无文章时返回 None。"""
     try:
-        # 处理articles参数，兼容Article对象和字典类型
-        processed_articles = []
-        if len(hook.articles) <= 0:
-            # raise ValueError("没有更新到文章")
+        if not hook.articles:
             logger.warning("没有更新到文章")
-            return
-        for article in hook.articles:
-            if isinstance(article, dict):
-                # 如果是字典类型，直接使用
-                processed_article = {
-                    field.name: (
-                        datetime.fromtimestamp(article[field.name]).strftime(
-                            "%Y-%m-%d %H:%M:%S"
-                        )
-                        if field.name == "publish_time" and field.name in article
-                        else article.get(field.name, "")
-                    )
-                    for field in Article.__table__.columns
-                }
-            else:
-                # 如果是Article对象，使用getattr获取属性
-                processed_article = {
-                    field.name: (
-                        datetime.fromtimestamp(getattr(article, field.name)).strftime(
-                            "%Y-%m-%d %H:%M:%S"
-                        )
-                        if field.name == "publish_time"
-                        else getattr(article, field.name)
-                    )
-                    for field in Article.__table__.columns
-                }
-            processed_articles.append(processed_article)
+            return None
 
-        hook.articles = processed_articles
+        hook.articles = [_article_to_dict(a) for a in hook.articles]
 
-        if hook.task.message_type == 0:  # 发送消息
+        if hook.task.message_type == MESSAGE_TYPE_SEND:
             return send_message(hook)
-        elif hook.task.message_type == 1:  # 调用webhook
+        if hook.task.message_type == MESSAGE_TYPE_WEBHOOK:
             return call_webhook(hook)
-        else:
-            raise ValueError(f"未知的消息类型: {hook.task.message_type}")
+        raise ValueError(f"未知的消息类型: {hook.task.message_type}")
     except Exception as e:
         raise ValueError(f"处理消息时出错: {str(e)}")

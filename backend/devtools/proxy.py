@@ -1,31 +1,32 @@
 # coding:utf-8
+"""MITM 代理辅助脚本（基于 BaseProxy）。非项目核心功能。"""
 import os
 import select
 import zlib
-
-import chardet
 import time
+import ssl
 from http.client import HTTPResponse
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from socketserver import ThreadingMixIn
-from urllib.parse import urlparse, ParseResult, urlunparse
-from tempfile import gettempdir
-
-import ssl
-from ssl import SSLError
 from socket import socket
+from ssl import SSLError
+from socketserver import ThreadingMixIn
+from tempfile import gettempdir
+from urllib.parse import ParseResult, urlparse, urlunparse
+
+import chardet
 from OpenSSL.crypto import (
-    load_certificate,
     FILETYPE_PEM,
     TYPE_RSA,
     PKey,
     X509,
     X509Extension,
-    dump_privatekey,
-    dump_certificate,
-    load_privatekey,
     X509Req,
-)
+    dump_certificate,
+    dump_privatekey,
+    load_certificate,
+    load_privatekey,
+)                      # type: ignore
+
 from core.common.log import logger
 
 """
@@ -37,7 +38,6 @@ from core.common.log import logger
 为方便使用，在代码上进行了一定的修改，大部分内容来源于，https://github.com/qiyeboy/BaseProxy/blob/master/baseproxy/proxy.py
     1. 修改部分函数名，变量名，函数，尽量保持与mitmproxy一致
     2. 由于项目主要目的是拦截，并非篡改，增加了对链接过滤功能。若链接不包含相关字符，则不做操作，直接返回。ProxyHandle中的`self.filter_url_lst`
-
 
 二次引用，若有冒犯原作者之处，敬请指出，将删除该文件。
 """
@@ -60,33 +60,23 @@ class HttpTransfer(object):
     def __init__(self):
         self.hostname = None
         self.port = None
-
-        self.url = ""  # 无协议头
-        # 这是请求
+        self.url = ""
         self.command = None
         self.path = None
         self.request_version = None
-
-        # 这是响应
         self.response_version = None
         self.status = None
         self.reason = None
-
-        self._headers = None
-
+        self._headers: dict[str, str] = {}
         self._body = b""
 
-    def parse_headers(self, headers_str):
-        """
-        暂时用不到
-        :param headers:
-        :return:
-        """
-        header_list = headers_str.rstrip("\r\n").split("\r\n")
+    def parse_headers(self, headers_str: str) -> dict[str, str]:
+        """解析 headers 字符串为字典。"""
         headers = {}
-        for header in header_list:
-            [key, value] = header.split(": ")
-            headers[key.lower()] = value
+        for line in headers_str.rstrip("\r\n").split("\r\n"):
+            if ": " in line:
+                key, value = line.split(": ", 1)
+                headers[key.lower()] = value
         return headers
 
     def to_data(self):
@@ -98,21 +88,14 @@ class HttpTransfer(object):
             headers_tmp[k.lower()] = v
         self._headers = headers_tmp
 
-    def build_headers(self):
-        """
-        返回headers字符串
-        :return:
-        """
-        header_str = ""
-        for k, v in self._headers.items():
-            header_str += k + ": " + v + "\r\n"
+    def build_headers(self) -> str:
+        """返回 headers 字符串。"""
+        return "\r\n".join(f"{k}: {v}" for k, v in self._headers.items()) + "\r\n"
 
-        return header_str
-
-    def get_header(self, key):
+    def get_header(self, key: str):
         if isinstance(key, str):
-            return self._headers.get(key.lower(), None)
-        raise Exception("parameter should be str")
+            return self._headers.get(key.lower())
+        raise TypeError("header key must be str")
 
     @property
     def headers(self):
@@ -122,17 +105,11 @@ class HttpTransfer(object):
         """
         return self._headers
 
-    def set_header(self, key, value):
-        """
-        设置头部
-        :param key:
-        :param value:
-        :return:
-        """
+    def set_header(self, key: str, value: str) -> None:
         if isinstance(key, str) and isinstance(value, str):
             self._headers[key.lower()] = value
             return
-        raise Exception("parameter should be str")
+        raise TypeError("header key and value must be str")
 
     def get_body_data(self):
         """
@@ -141,12 +118,11 @@ class HttpTransfer(object):
         """
         return self._body
 
-    def set_body_data(self, body):
-        if isinstance(body, bytes):
-            self._body = body
-            self.set_header("Content-length", str(len(body)))
-            return
-        raise Exception("parameter should be bytes")
+    def set_body_data(self, body: bytes) -> None:
+        if not isinstance(body, bytes):
+            raise TypeError("body must be bytes")
+        self._body = body
+        self.set_header("Content-Length", str(len(body)))
 
 
 class Request(HttpTransfer):
@@ -167,14 +143,10 @@ class Request(HttpTransfer):
         if self.get_header("Content-Length"):
             self.set_body_data(req.rfile.read(int(self.get_header("Content-Length"))))
 
-    def to_data(self):
-        # Build request
-        req_data = "%s %s %s\r\n" % (self.command, self.path, self.request_version)
-        # Add headers to the request
-        req_data += "%s\r\n" % self.build_headers()
-        req_data = req_data.encode("utf-8")
-        req_data += self.get_body_data()
-        return req_data
+    def to_data(self) -> bytes:
+        req_data = f"{self.command} {self.path} {self.request_version}\r\n"
+        req_data += self.build_headers()
+        return req_data.encode("utf-8") + self.get_body_data()
 
 
 class Response(HttpTransfer):
@@ -204,16 +176,16 @@ class Response(HttpTransfer):
         h.close()
         proxy_socket.close()
 
-    def _text(self):
+    def _text(self) -> None:
+        """尝试将 body 解码为文本（用于 text/javascript 类型）。"""
         body_data = self.get_body_data()
-        if self.get_header("Content-Type") and (
-            "text" or "javascript"
-        ) in self.get_header("Content-Type"):
-            self.decoding = chardet.detect(body_data)["encoding"]  # 探测当前的编码
+        content_type = self.get_header("Content-Type") or ""
+        if "text" in content_type or "javascript" in content_type:
+            self.decoding = chardet.detect(body_data).get("encoding")
             if self.decoding:
                 try:
-                    self._body_str = body_data.decode(self.decoding)  # 请求体
-                except Exception as e:
+                    self._body_str = body_data.decode(self.decoding)
+                except Exception:
                     self._body_str = body_data
                     self.decoding = None
             else:
@@ -222,22 +194,16 @@ class Response(HttpTransfer):
             self._body_str = body_data
             self.decoding = None
 
-    def get_text(self, decoding=None):
-        if decoding:
-            return self.get_body_data().decode(decoding)
-        return self.get_body_data().decode()
+    def get_text(self, decoding: str | None = None) -> str:
+        enc = decoding or self.decoding or "utf-8"
+        return self.get_body_data().decode(enc, errors="replace")
 
-    def set_body_str(self, body_str, encoding=None):
-        if isinstance(body_str, str):
-            if encoding:
-                self.set_body_data(body_str.encode(encoding))
-            else:
-                self.set_body_data(
-                    body_str.encode(self.decoding if self.decoding else "utf-8")
-                )
-            self._body_str = body_str
-            return
-        raise Exception("parameter should be str")
+    def set_body_str(self, body_str: str, encoding: str | None = None) -> None:
+        if not isinstance(body_str, str):
+            raise TypeError("body_str must be str")
+        enc = encoding or (self.decoding if self.decoding else "utf-8")
+        self.set_body_data(body_str.encode(enc))
+        self._body_str = body_str
 
     def _encode_content_body(self, text, encoding):
 
@@ -255,30 +221,28 @@ class Response(HttpTransfer):
 
         return data
 
-    def _decode_content_body(self, data, encoding):
-        if encoding == "identity":  # 没有压缩
+    def _decode_content_body(self, data: bytes, encoding: str | None) -> bytes:
+        if encoding in (None, "identity"):
             text = data
-
-        elif encoding in ("gzip", "x-gzip"):  # gzip压缩
+        elif encoding in ("gzip", "x-gzip"):
             text = zlib.decompress(data, 16 + zlib.MAX_WBITS)
-        elif encoding == "deflate":  # zip压缩
+        elif encoding == "deflate":
             try:
                 text = zlib.decompress(data)
             except zlib.error:
                 text = zlib.decompress(data, -zlib.MAX_WBITS)
         else:
             text = data
-
-        self.set_header("Content-Encoding", "identity")  # 没有压缩
+        self.set_header("Content-Encoding", "identity")
         return text
 
-    def to_data(self):
-
-        res_data = "%s %s %s\r\n" % (self.response_version, self.status, self.reason)
-        res_data += "%s\r\n" % self.build_headers()
-        res_data = res_data.encode(self.decoding if self.decoding else "utf-8")
-        res_data += self.get_body_data()
-        return res_data
+    def to_data(self) -> bytes:
+        res_data = (
+            f"{self.response_version} {self.status} {self.reason}\r\n"
+            + self.build_headers()
+        )
+        enc = self.decoding if self.decoding else "utf-8"
+        return res_data.encode(enc) + self.get_body_data()
 
 
 class CAAuth(object):
@@ -329,9 +293,11 @@ class CAAuth(object):
         with open(self.cert_file_path, "wb+") as f:
             f.write(dump_certificate(FILETYPE_PEM, self.cert))
 
-    def _read_ca(self, file):
-        self.cert = load_certificate(FILETYPE_PEM, open(file, "rb").read())
-        self.key = load_privatekey(FILETYPE_PEM, open(file, "rb").read())
+    def _read_ca(self, file: str) -> None:
+        with open(file, "rb") as f:
+            data = f.read()
+        self.cert = load_certificate(FILETYPE_PEM, data)
+        self.key = load_privatekey(FILETYPE_PEM, data)
 
     def __getitem__(self, cn):
         # 将为每个域名生成的服务器证书，放到临时目录中
@@ -340,7 +306,7 @@ class CAAuth(object):
         if not os.path.exists(root_dir):
             os.makedirs(root_dir)
 
-        cnp = os.path.join(root_dir, "baseproxy_{}.pem".format(cn))
+        cnp = os.path.join(root_dir, f"baseproxy_{cn}.pem")
 
         if not os.path.exists(cnp):
             self._sign_ca(cn, cnp)
@@ -379,7 +345,7 @@ class CAAuth(object):
                 f.write(dump_privatekey(FILETYPE_PEM, key))
                 f.write(dump_certificate(FILETYPE_PEM, cert))
         except Exception as e:
-            raise Exception("generate CA fail:{}".format(str(e)))
+            raise RuntimeError(f"generate CA fail: {e}") from e
 
     @property
     def serial(self):
@@ -422,7 +388,7 @@ class ProxyHandle(BaseHTTPRequestHandler):
             try:
                 self._proxy_to_dst()
             except Exception as e:
-                self.send_error(500, "{} connect fail ".format(self.hostname))
+                self.send_error(500, f"connect fail: {self.hostname} - {e}")
                 return
         # 这里就是代理发送请求，并接收响应信息
         request = Request(self)
@@ -455,20 +421,16 @@ class ProxyHandle(BaseHTTPRequestHandler):
     do_DELETE = do_GET
     do_OPTIONS = do_GET
 
-    def _proxy_to_ssldst(self):
-        """
-        代理连接https目标服务器
-        :return:
-        """
-        ##确定一下目标的服务器的地址与端口
-
-        # 如果之前经历过connect
-        # CONNECT www.baidu.com:443 HTTP 1.1
-        self.hostname, self.port = self.path.split(":")
+    def _proxy_to_ssldst(self) -> None:
+        """代理连接 HTTPS 目标服务器。CONNECT 时 path 形如 hostname:port。"""
+        parts = self.path.rsplit(":", 1)
+        if len(parts) != 2:
+            raise ValueError(f"invalid CONNECT path: {self.path}")
+        self.hostname, port_str = parts
+        self.port = int(port_str)
         self._proxy_sock = socket()
         self._proxy_sock.settimeout(10)
-        self._proxy_sock.connect((self.hostname, int(self.port)))
-        # 进行SSL包裹
+        self._proxy_sock.connect((self.hostname, self.port))
         context = ssl.create_default_context()
         self._proxy_sock = context.wrap_socket(
             self._proxy_sock, server_hostname=self.hostname
@@ -511,7 +473,9 @@ class ProxyHandle(BaseHTTPRequestHandler):
 
             # 这个时候需要将客户端的socket包装成sslsocket,这个时候的self.path类似www.baidu.com:443，根据域名使用相应的证书
             context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-            context.load_cert_chain(certfile=self.server.ca[self.path.split(":")[0]])
+            # 此时 path 形如 hostname:443，取 hostname 作证书 key
+            host = self.path.split(":")[0]
+            context.load_cert_chain(certfile=self.server.ca[host])
             self.request = context.wrap_socket(self.request, server_side=True)
         except SSLError:
             self.send_error(500, "更新证书!")
@@ -521,22 +485,24 @@ class ProxyHandle(BaseHTTPRequestHandler):
             return
 
         self.setup()
-        self.ssl_host = "https://%s" % self.path
+        self.ssl_host = f"https://{self.path}"
         try:
             self.handle_one_request()
         except Exception as e:
             return
 
-    def connect_relay(self):
-        """
-        对于https报文直接转发
-        """
-
-        self.hostname, self.port = self.path.split(":")
+    def connect_relay(self) -> None:
+        """HTTPS 隧道模式：直接双向转发，不解密。"""
+        parts = self.path.rsplit(":", 1)
+        if len(parts) != 2:
+            self.send_error(500, f"invalid CONNECT path: {self.path}")
+            return
+        self.hostname, port_str = parts
+        self.port = int(port_str)
         try:
             self._proxy_sock = socket()
             self._proxy_sock.settimeout(10)
-            self._proxy_sock.connect((self.hostname, int(self.port)))
+            self._proxy_sock.connect((self.hostname, self.port))
         except Exception as e:
             self.send_error(500)
             return
@@ -598,18 +564,19 @@ class MitmProxy(ThreadingMixIn, HTTPServer):
     ):
         HTTPServer.__init__(self, server_addr, RequestHandlerClass, bind_and_activate)
         logger.info(
-            "HTTPServer is running at address( %s , %d )......"
-            % (server_addr[0], server_addr[1])
+            "HTTPServer is running at address (%s, %d)......",
+            server_addr[0],
+            server_addr[1],
         )
         self.req_plugs = []  ##请求拦截插件列表
         self.rsp_plugs = []  ##响应拦截插件列表
         self.ca = CAAuth(ca_file=ca_file, cert_file=cert_file)
         self.https = https
 
-    def register(self, intercept_plug):
+    def register(self, intercept_plug) -> None:
         if not issubclass(intercept_plug, InterceptPlug):
-            raise Exception(
-                "Expected type InterceptPlug got %s instead" % type(intercept_plug)
+            raise TypeError(
+                f"Expected type InterceptPlug, got {type(intercept_plug).__name__}"
             )
 
         if issubclass(intercept_plug, ReqIntercept):

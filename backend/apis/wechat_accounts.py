@@ -166,13 +166,20 @@ async def get_mp(
     mp_id: str,
 ):
     try:
+        # 兼容两种入参：
+        # 1) 系统内主键 id（如 MP_WXS_xxx）
+        # 2) 微信 fakeid（如 MzI3NDQ0MTI2OQ==）
         mp = await feed_repo.get_feed_by_id(mp_id)
+        if not mp:
+            mp = await feed_repo.get_feed_by_faker_id(mp_id)
         if not mp:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=error_response(code=40401, message="公众号不存在"),
             )
         return success_response(mp)
+    except HTTPException:
+        raise
     except Exception as e:
         logger.info(f"获取公众号详情错误: {str(e)}")
         raise HTTPException(

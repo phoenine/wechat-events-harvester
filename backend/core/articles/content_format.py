@@ -1,59 +1,63 @@
-from bs4 import BeautifulSoup
+from typing import Literal, cast
+from bs4 import BeautifulSoup, Tag
 import re
+from markdownify import markdownify as md
 from core.common.log import logger
 
+# markdown 分支：需要 unwrap 的标签（只保留内容）
+TAGS_TO_UNWRAP = ["span", "font", "div", "strong", "b"]
+# markdown 分支：需要从所有标签上移除的属性
+ATTRS_TO_STRIP = frozenset({"style", "class", "data-pm-slice", "data-title"})
 
-def format_content(content: str, content_format: str = "html"):
-    # 格式化内容
-    # content_format: 'text' or 'markdown' or 'html'
-    # content: str
-    # return: str
+
+def format_content(
+    content: str,
+    content_format: Literal["text", "markdown", "html"] = "html",
+) -> str:
+    """将 HTML 内容格式化为纯文本、Markdown 或保留 HTML。
+
+    - text:  strip 所有标签，保留纯文本，合并多余空行。
+    - markdown: 去掉部分内联标签、清理属性后，用 markdownify 转成 Markdown。
+    - html: 原样返回。
+    """
     try:
         if content_format == "text":
-            # 去除HTML标签，保留纯文本
             soup = BeautifulSoup(content, "html.parser")
             text = soup.get_text().strip()
-            content = re.sub(r"\n\s*\n", "\n", text)
-        elif content_format == "markdown":
-            # 去除span和font标签，只保留内容
-            soup = BeautifulSoup(content, "html.parser")
-            for tag in soup.find_all(["span", "font", "div", "strong", "b"]):
-                tag.unwrap()
-            for tag in soup.find_all(True):
-                if "style" in tag.attrs:
-                    del tag.attrs["style"]
-                if "class" in tag.attrs:
-                    del tag.attrs["class"]
-                if "data-pm-slice" in tag.attrs:
-                    del tag.attrs["data-pm-slice"]
-                if "data-title" in tag.attrs:
-                    # tag.append(tag.attrs['data-title'])
-                    del tag.attrs["data-title"]
+            return re.sub(r"\n\s*\n", "\n", text)
+        if content_format == "html":
+            return content
 
-            content = str(soup)
-            # 替换 p 标签中的换行符为空
-            content = re.sub(
-                r"(<p[^>]*>)([\s\S]*?)(<\/p>)",
-                lambda m: m.group(1) + re.sub(r"\n", "", m.group(2)) + m.group(3),
-                content,
-            )
-            content = re.sub(r"\n\s*\n\s*\n+", "\n", content)
-            content = re.sub(r"\*", "", content)
-            # print(content)
-            from markdownify import markdownify as md
+        # markdown
+        soup = BeautifulSoup(content, "html.parser")
+        for tag in soup.find_all(TAGS_TO_UNWRAP):
+            cast(Tag, tag).unwrap()
+        for t in soup.find_all(True):
+            tag = cast(Tag, t)
+            for attr in list(tag.attrs):
+                if attr in ATTRS_TO_STRIP:
+                    del tag.attrs[attr]
 
-            # 处理图片标签，保留title属性
-            soup = BeautifulSoup(content, "html.parser")
-            for img in soup.find_all("img"):
-                if "title" in img.attrs:
-                    img["alt"] = img["title"]
-            content = str(soup)
-            # 转换HTML到Markdown
-            content = md(
-                content, heading_style="ATX", bullets="-*+", code_language="python"
-            )
-            content = re.sub(r"\n\s*\n\s*\n+", "\n\n", content)
+        content = str(soup)
+        content = re.sub(
+            r"(<p[^>]*>)([\s\S]*?)(<\/p>)",
+            lambda m: m.group(1) + re.sub(r"\n", "", m.group(2)) + m.group(3),
+            content,
+        )
+        content = re.sub(r"\n\s*\n\s*\n+", "\n", content)
+        content = re.sub(r"\*", "", content)
+
+        soup = BeautifulSoup(content, "html.parser")
+        for img in soup.find_all("img"):
+            img_tag = cast(Tag, img)
+            if "title" in img_tag.attrs:
+                img_tag["alt"] = img_tag["title"]
+        content = str(soup)
+        content = md(
+            content, heading_style="ATX", bullets="-*+", code_language="python"
+        )
+        return re.sub(r"\n\s*\n\s*\n+", "\n\n", content)
 
     except Exception as e:
         logger.error(f"format_content error: {e}")
-    return content
+        return content

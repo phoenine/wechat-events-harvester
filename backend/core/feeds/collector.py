@@ -25,7 +25,7 @@ def collect_feed_articles(
     mp_name = _feed_value(feed, "mp_name")
 
     if not faker_id:
-        raise ValueError("公众号缺少 faker_id，无法采集")
+        raise ValueError("公众号缺少 faker_id, 无法采集")
 
     wx = create_gather()
     try:
@@ -37,7 +37,7 @@ def collect_feed_articles(
             Over_CallBack=on_finish,
             start_page=start_page,
             MaxPage=max_page,
-            interval=interval,
+            interval=interval if interval is not None else 0,
         )
     except Exception as e:
         logger.error(f"采集公众号[{mp_name or mp_id}]失败: {e}")

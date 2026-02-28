@@ -96,9 +96,8 @@ class MpsAppMsg(WxGather):
         i = int(start_page or 0)
 
         # token 仅对需要 token 的接口按需推导
-        token = self.ensure_mp_token()
+        token = self.require_mp_token()
         if not token:
-            self.Error("请先扫码登录公众号平台")
             return
 
         while True:

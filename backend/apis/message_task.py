@@ -15,14 +15,14 @@ router = APIRouter(prefix="/message_tasks", tags=["消息任务"])
 async def list_message_tasks(
     limit: int = Query(10, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    status: Optional[int] = None,
+    task_status: Optional[int] = None,
     _current_user: dict = Depends(get_current_user),
 ):
     """获取消息任务列表"""
     try:
         filters = {}
-        if status is not None:
-            filters["status"] = status
+        if task_status is not None:
+            filters["status"] = task_status
         total = await message_repo.count_message_tasks(filters=filters)
         message_tasks = await message_repo.get_message_tasks(
             filters=filters, limit=limit, offset=offset
@@ -101,7 +101,7 @@ async def run_message_task(
 
             for task in tasks:
                 try:
-                    ids = json.loads(task.mps_id)
+                    ids = json.loads(task["mps_id"])
                     count += len(ids)
                     mps["count"] = count
                     mps["list"].append(ids)

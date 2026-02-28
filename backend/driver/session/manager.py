@@ -1,4 +1,5 @@
 from __future__ import annotations
+import re
 from threading import Lock
 from typing import Any, Callable, Optional
 from core.common.log import logger
@@ -54,7 +55,7 @@ class SessionManager:
         self._get_logged_in = get_logged_in or (lambda: False)
         self._lock = login_lock or Lock()
 
-    def format_session(self, cookies: Any) -> WxMpSession:
+    def format_session(self, cookies: Any, token: Optional[str] = None) -> WxMpSession:
         """根据 cookies 构建统一的 WxMpSession 结构"""
         cookies_str = ""
         for cookie in cookies or []:
@@ -67,12 +68,15 @@ class SessionManager:
             if name:
                 cookies_str += f"{name}={value}; "
         cookie_expiry = expire(cookies or [])
-        return {
+        sess: WxMpSession = {
             "cookies": cookies,
             "cookies_str": cookies_str,
             "wx_login_url": self._get_qr_url(),
             "expiry": cookie_expiry,
         }
+        if token:
+            sess["token"] = str(token)
+        return sess
 
     def load_persisted_session(self) -> Optional[WxMpSession]:
         """从持久化存储加载公众号会话"""
@@ -160,5 +164,15 @@ class SessionManager:
         except Exception:
             cookies = None
 
-        session = self.format_session(cookies)
-        return session, cookies, None
+        token: Optional[str] = None
+        try:
+            page = getattr(controller, "page", None)
+            page_url = getattr(page, "url", "") or ""
+            m = re.search(r"[?&]token=([^&]+)", page_url)
+            if m:
+                token = m.group(1)
+        except Exception:
+            token = None
+
+        session = self.format_session(cookies, token=token)
+        return session, cookies, token

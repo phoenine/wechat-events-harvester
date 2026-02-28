@@ -581,8 +581,10 @@ class Wx:
                     f"[wx-login] wait_for_url failed err={e} current_url={current_url} ready_state={ready_state} title={title}"
                 )
             raise
-        self._set_state(LoginState.SUCCESS)
-        logger.info("登录成功, 正在获取cookie和token...")
+        # 注意：此处仅表示扫码/确认已完成并进入后台主页，
+        # 不应提前标记 SUCCESS。SUCCESS 由 Call_Success 在会话构建并校验后统一设置，
+        # 避免前端基于“过早 success”触发收尾导致 cookies 未持久化。
+        logger.info("扫码确认完成, 正在获取cookie和token...")
 
     def _close_event_loop_if_needed(self, NeedExit: bool):
         """sync Playwright 自行管理循环，这里不做额外关闭。"""

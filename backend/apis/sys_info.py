@@ -48,14 +48,14 @@ async def system_resources(
     """获取系统资源使用情况
 
     Returns:
-        BaseResponse格式的资源使用信息，包括:
+        BaseResponse格式的资源使用信息, 包括:
         - cpu: CPU使用率(%)
         - memory: 内存使用情况
         - disk: 磁盘使用情况
     """
     try:
         resources_info = get_system_resources()
-        resources_info["queue"] = (TaskQueue.get_queue_info(),)
+        resources_info["queue"] = TaskQueue.get_queue_info()
         return success_response(data=resources_info)
     except Exception as e:
         raise HTTPException(

@@ -57,6 +57,23 @@ class WxGather:
 
         self.ensure_http_context()
 
+    def _load_persisted_token(self) -> str:
+        """best-effort: 从持久化会话读取 token。"""
+        try:
+            from driver.session.store import Store
+
+            sess = Store.load_session()
+            if isinstance(sess, dict):
+                token = sess.get("token")
+                logger.info(
+                    f"[wx-token-debug] persisted_token_exists={bool(token)} updated_at={sess.get('updated_at')}"
+                )
+                if token:
+                    return str(token)
+        except Exception:
+            pass
+        return ""
+
     def all_count(self):
         if getattr(self, "articles", None) is not None:
             return len(self.articles)
@@ -113,9 +130,16 @@ class WxGather:
             if m:
                 return m.group(1)
             # 退一步：token:"xxxx" 或 token = "xxxx"
-            m = re.search(r"token\s*[:=]\s*['\"](\d+)['\"]", html)
+            m = re.search(r"token\s*[:=]\s*['\"]([^'\"]+)['\"]", html)
             if m:
                 return m.group(1)
+            # 兼容 cgiData/全局对象里的 token
+            m = re.search(r"cgiData[^\\n]*token\s*[:=]\s*['\"]([^'\"]+)['\"]", html)
+            if m:
+                return m.group(1)
+            logger.warning(
+                f"[wx-token-debug] derive_failed final_url={final_url[:200]} html_len={len(html)}"
+            )
         except Exception as e:
             logger.error(f"_derive_mp_token_from_cookies 失败: {e}")
             return ""
@@ -165,7 +189,7 @@ class WxGather:
             "User-Agent": self.user_agent,
         }
 
-        # token 不再持久化；按需推导
+        # token 优先读内存/持久化会话，缺失时按需推导
         if not hasattr(self, "token"):
             self.token = ""
 
@@ -173,11 +197,32 @@ class WxGather:
         """确保 mp token 可用（仅在需要 token 的接口里调用）。"""
         token = getattr(self, "token", "") or ""
         if token:
+            logger.info("[wx-token-debug] token_source=memory")
+            return token
+        token = self._load_persisted_token()
+        if token:
+            self.token = token
+            logger.info("[wx-token-debug] token_source=persisted")
             return token
         self.ensure_http_context()
         token = self._derive_mp_token_from_cookies(self.cookies, headers=self.headers)
         self.token = token
+        logger.info(f"[wx-token-debug] token_source=derived success={bool(token)}")
         return token
+
+    def require_mp_token(self) -> str:
+        """获取可用 mp token，并区分未登录与风控/环境异常。"""
+        self.ensure_http_context(force_refresh=True)
+        if not self.cookies:
+            self.Error("请先扫码登录公众号平台")
+            return ""
+
+        token = self.ensure_mp_token()
+        if token:
+            return token
+
+        self.Error("登录态异常，请在公众号平台完成验证后重试")
+        return ""
 
     def fix_header(self, url):
         # 确保基础上下文已初始化
@@ -249,9 +294,8 @@ class WxGather:
             "ajax": "1",
         }
         headers = self.fix_header(url)
-        token = self.ensure_mp_token()
+        token = self.require_mp_token()
         if not token:
-            self.Error("请先扫码登录公众号平台")
             return
         params["token"] = token
         data = {}
