@@ -6,9 +6,24 @@
         <div class="logo">
           <img :src="logo" alt="avatar" :width="60" style="margin-right:1rem;">
           <router-link to="/">{{ appTitle }}</router-link>
-          <a-tooltip v-if="hasLogined" :content="!haswxLogined ? '未授权，请扫码登录' : '点我扫码授权'" position="bottom">
-
-            <icon-scan @click="showAuthQrcode()" :style="{ marginLeft: '10px', cursor: 'pointer', color: !haswxLogined ? '#f00' : '#000' }"/>
+          <a-tooltip
+            v-if="hasLogined"
+            :content="haswxLogined ? '已授权' : '未授权，请扫码登录'"
+            position="bottom"
+          >
+            <span style="display: inline-flex; align-items: center; margin-left: 10px;">
+              <icon-scan
+                v-if="!haswxLogined"
+                @click="showAuthQrcode()"
+                :style="{ cursor: 'pointer', color: '#F53F3F' }"
+              />
+              <span v-else style="display: inline-flex; align-items: center;">
+                <icon-check-circle :style="{ color: '#00B42A' }" />
+                <span style="margin-left: 4px; color: #00B42A; font-size: 12px;">
+                  已授权
+                </span>
+              </span>
+            </span>
           </a-tooltip>
         </div>
         <a-space>
@@ -173,7 +188,7 @@
             </a-doption>
             <a-doption @click="showAuthQrcode">
               <template #icon><icon-scan /></template>
-              扫码授权
+              刷新授权
             </a-doption>
             <a-doption @click="handleLogout">
               <template #icon><icon-user /></template>
@@ -181,7 +196,7 @@
             </a-doption>
           </template>
         </a-dropdown>
-        <WechatAuthQrcode ref="qrcodeRef" />
+        <WechatAuthQrcode ref="qrcodeRef" @success="handleWxAuthSuccess" />
         <a-modal v-model:visible="sponsorVisible" title="感谢支持" :footer="false" :style="{ zIndex: 1000 }" unmount-on-close>
           <div style="text-align: center;">
             <p>如果您觉得这个项目对您有帮助,请给Rachel来一杯Coffee吧~ </p>
@@ -267,6 +282,12 @@ const fetchSysInfo = async () => {
   }
 }
 
+const handleWxAuthSuccess = async () => {
+  // 先立即更新 UI，再向后端确认最终状态
+  haswxLogined.value = true
+  await fetchSysInfo()
+}
+
 const handleCollapse = (val: boolean) => {
   collapsed.value = val
 }
@@ -296,9 +317,9 @@ const handleLogout = async () => {
 onMounted(() => {
   if (isAuthenticated.value) {
     fetchUserInfo()
+    fetchSysInfo()
   }
   translatePage();
-  fetchSysInfo();
 })
 import { translatePage, setCurrentLanguage } from '@/utils/translate';
 
@@ -308,6 +329,7 @@ watch(
     hasLogined.value = !!localStorage.getItem('token')
     if (hasLogined.value) {
       fetchUserInfo()
+      fetchSysInfo()
     }
   }
 )

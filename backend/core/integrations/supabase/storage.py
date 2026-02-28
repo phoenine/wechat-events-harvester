@@ -70,6 +70,11 @@ class SupabaseStorage:
             raise Exception(resp.text)
         data = resp.json()
         signed = data.get("signedURL") or data.get("signedUrl") or ""
+        if signed.startswith("/storage/v1/"):
+            return f"{self.url}{signed}"
+        # 兼容部分自部署 Supabase 返回 "/object/sign/..." 的场景
+        if signed.startswith("/object/"):
+            return f"{self.url}/storage/v1{signed}"
         if signed.startswith("/"):
             return f"{self.url}{signed}"
         return signed

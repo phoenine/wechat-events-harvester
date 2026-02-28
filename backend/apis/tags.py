@@ -49,8 +49,8 @@ async def create_tag(
             "intro": tag.intro or "",
             "mps_id": tag.mps_id,
             "status": tag.status,
-            "created_at": datetime.now(timezone.utc),
-            "updated_at": datetime.now(timezone.utc),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
         }
 
         new_tag = await tag_repo.create_tag(tag_data)
@@ -106,7 +106,7 @@ async def update_tag(
             "intro": tag_data.intro,
             "status": tag_data.status,
             "mps_id": tag_data.mps_id,
-            "updated_at": datetime.now(timezone.utc),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
         }
 
         updated_tags = await tag_repo.update_tag(tag_id, update_data)

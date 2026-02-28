@@ -56,7 +56,13 @@ export const addSubscription = (data: AddSubscriptionParams) => {
   return http.post<{ code: number; message: string }>('/wx/mps', data)
 }
 export const getSubscriptionInfo = (url: string) => {
-  return http.post<{ code: number; message: string }>(`/wx/mps/by_article?url=${url}`)
+  return http.post<{ code: number; message: string }>(
+    '/wx/wechat-accounts/by_article',
+    null,
+    {
+      params: { url: url.trim() },
+    }
+  )
 }
 
 export const deleteSubscription = (mp_id: string) => {

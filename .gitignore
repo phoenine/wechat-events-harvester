@@ -14,8 +14,6 @@ venv/
 env/
 
 .env
-.env.*
-config.yaml
 
 build/
 dist/

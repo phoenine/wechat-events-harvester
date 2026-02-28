@@ -171,9 +171,14 @@ const handleGetMpInfo = async () => {
       form.value.wx_id = info.biz || '';
       form.value.avatar = info.logo || '';
     }
-  } catch (error) {
+  } catch (error: any) {
     console.error('获取公众号信息失败:', error);
-    Message.error('获取公众号信息失败');
+    const msg = typeof error === 'string' ? error : (error?.message || '');
+    if (msg.includes('502') || msg.includes('Bad Gateway') || msg.includes('获取公众号信息失败')) {
+      Message.error('获取公众号信息失败，请先完成扫码授权后重试');
+    } else {
+      Message.error('获取公众号信息失败');
+    }
     return false;
   } finally {
     isFetching.value = false;

@@ -10,6 +10,30 @@ import re
 import requests
 import uuid
 
+ARTICLE_COLUMNS = {
+    "id",
+    "mp_id",
+    "title",
+    "author",
+    "digest",
+    "content",
+    "content_md",
+    "cover_url",
+    "publish_time",
+    "publish_at",
+    "read_num",
+    "like_num",
+    "comment_count",
+    "reward_num",
+    "url",
+    "copyright_stat",
+    "is_top",
+    "first_data",
+    "status",
+    "created_at",
+    "updated_at",
+}
+
 
 def _sanitize_slug(value: str, default: str = "article") -> str:
     text = (value or "").strip().lower()
@@ -82,6 +106,27 @@ def _upload_article_images(article: dict) -> dict:
     return article
 
 
+def _normalize_article_for_db(article: dict) -> dict:
+    """将采集侧字段归一化到 articles 表字段。"""
+    data = dict(article or {})
+
+    # 兼容旧字段命名
+    if data.get("description") and not data.get("digest"):
+        data["digest"] = data.get("description")
+    if data.get("pic_url") and not data.get("cover_url"):
+        data["cover_url"] = data.get("pic_url")
+
+    # 表外字段（采集上下文）不入库
+    data.pop("description", None)
+    data.pop("pic_url", None)
+    data.pop("images", None)
+    data.pop("mp_info", None)
+    data.pop("ext", None)
+
+    # 仅保留 articles 表已定义字段，避免 schema 漂移导致入库失败
+    return {k: v for k, v in data.items() if k in ARTICLE_COLUMNS}
+
+
 def UpdateArticle(art: dict, check_exist: bool = False):
     """更新文章"""
     mps_count = 0
@@ -89,6 +134,7 @@ def UpdateArticle(art: dict, check_exist: bool = False):
         pass
     try:
         art = _upload_article_images(dict(art))
+        art = _normalize_article_for_db(art)
         # 使用 Supabase 创建文章
         result = article_repo.sync_create_article(art)
         if result:

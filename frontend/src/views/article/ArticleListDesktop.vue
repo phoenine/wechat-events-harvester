@@ -158,13 +158,6 @@
               </a-space-item>
 
               <a-space-item>
-                <a-button @click="handleAuthClick">
-                  <template #icon><icon-scan /></template>
-                  刷新授权
-                </a-button>
-              </a-space-item>
-
-              <a-space-item>
                 <a-dropdown>
                   <a-button>
                     <template #icon>
@@ -356,7 +349,7 @@
 <script setup lang="ts">
 import { Avatar } from "@/utils/constants";
 import { translatePage, setCurrentLanguage } from "@/utils/translate";
-import { ref, onMounted, h, inject } from "vue";
+import { ref, onMounted, h } from "vue";
 import axios from "axios";
 import {
   IconApps,
@@ -540,9 +533,6 @@ const handleSearch = () => {
   pagination.value.current = 1;
   fetchArticles();
 };
-
-const showAuthQrcode = inject("showAuthQrcode") as () => void;
-const handleAuthClick = () => showAuthQrcode();
 
 const exportOPML = async () => {
   try {
@@ -803,7 +793,7 @@ const fetchMpList = async () => {
     mpList.value.unshift({
       id: "",
       name: "全部",
-      avatar: "/static/logo.svg",
+      avatar: "/logo.svg",
       mp_intro: "显示所有公众号文章",
       article_count: res.total || 0,
     });

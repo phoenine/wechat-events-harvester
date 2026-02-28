@@ -6,7 +6,7 @@ import router from '@/router'
 
 // 创建axios实例
 const http = axios.create({
-  baseURL: (import.meta.env.VITE_API_BASE_URL || '') + 'api/v1/',
+  baseURL: '/api/v1/',
   timeout: 100000,
   headers: {
     'Content-Type': 'application/json',
@@ -32,6 +32,10 @@ http.interceptors.request.use(
 // 响应拦截器
 http.interceptors.response.use(
   (response) => {
+    // 兼容非统一响应结构：如登录接口直接返回 token 对象
+    if (response.status >= 200 && response.status < 300 && response.data?.code === undefined) {
+      return response.data
+    }
     // 处理标准响应格式
     if (response.data?.code === 0) {
       return response.data?.data || response.data?.detail || response.data || response

@@ -19,8 +19,8 @@ SUPABASE_URL = settings.url
 SUPABASE_ANON_KEY = settings.anon_key
 SUPABASE_SERVICE_KEY = settings.service_key
 
-# OAuth2 配置（用于 /api/v1/auth/token 密码登录模式）
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/token", auto_error=False)
+# OAuth2 配置（用于 /api/v1/wx/auth/token 密码登录模式）
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/wx/auth/token", auto_error=False)
 security = HTTPBearer(auto_error=False)
 
 

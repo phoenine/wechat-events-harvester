@@ -483,8 +483,8 @@ class WxService:
         state_str = str(st.get("state") or LoginState.IDLE.value)
 
         try:
-            # 懒加载：避免 import driver.wx_service 时引入 Playwright 相关链路
-            from driver.wx_article import WXArticleFetcher
+            # 懒加载：避免 import driver.wx.service 时引入 Playwright 相关链路
+            from driver.wx.article import WXArticleFetcher
 
             fetcher = WXArticleFetcher()
             info = fetcher.get_article_content(url)

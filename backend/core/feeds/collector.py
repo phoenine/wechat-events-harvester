@@ -22,7 +22,7 @@ def collect_feed_articles(
     """采集单个公众号文章并返回结果。"""
     faker_id = _feed_value(feed, "faker_id")
     mp_id = _feed_value(feed, "id")
-    mp_name = _feed_value(feed, "mp_name")
+    mp_name = _feed_value(feed, "mp_name") or _feed_value(feed, "name")
 
     if not faker_id:
         raise ValueError("公众号缺少 faker_id, 无法采集")

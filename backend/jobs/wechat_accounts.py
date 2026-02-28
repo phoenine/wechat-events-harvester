@@ -40,8 +40,8 @@ def do_job(mp: Any = None, task: Optional[MessageTask] = None) -> None:
     logger.info("执行任务")
     articles = []
     count = 0
-    mp_name = getattr(mp, "mp_name", None) or (
-        mp.get("mp_name") if isinstance(mp, dict) else None
+    mp_name = getattr(mp, "mp_name", None) or getattr(mp, "name", None) or (
+        (mp.get("mp_name") or mp.get("name")) if isinstance(mp, dict) else None
     )
     try:
         interval = runtime_settings.get_int_sync("interval", 60)
@@ -73,8 +73,8 @@ def add_job(
         TaskQueue.clear_queue()
     for feed in feeds or []:
         # 兼容 dict / 对象两种形式，安全获取名称
-        mp_name = getattr(feed, "mp_name", None) or (
-            feed.get("mp_name") if isinstance(feed, dict) else "未知公众号"
+        mp_name = getattr(feed, "mp_name", None) or getattr(feed, "name", None) or (
+            (feed.get("mp_name") or feed.get("name")) if isinstance(feed, dict) else "未知公众号"
         )
 
         TaskQueue.add_task(do_job, feed, task)

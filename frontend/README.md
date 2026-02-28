@@ -33,10 +33,16 @@ npm install --save-dev less less-loader
 
 ## 环境变量配置
 
-创建`.env`文件：
+创建`frontend/.env.development`文件：
 ```ini
-VITE_API_BASE_URL=http://your-api-server.com
+DEV_PROXY_TARGET=http://localhost:38001
+VITE_APP_TITLE=微信公众号订阅助手
+VITE_DEBUG_MODE=false
 ```
+
+说明：
+- 前端开发时统一请求相对路径（`/api/v1/`），由 Vite 代理转发到 `DEV_PROXY_TARGET`。
+- 根目录 `.env` 是给 Docker Compose / 后端使用的，Vite 不会自动读取它。
 
 ## 运行项目
 

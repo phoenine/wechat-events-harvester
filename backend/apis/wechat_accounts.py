@@ -1,6 +1,7 @@
 import time
 from datetime import datetime, timezone
 from typing import List, Dict, Any, cast, Optional
+import json
 from fastapi import (
     APIRouter,
     Depends,
@@ -27,6 +28,22 @@ from core.common.utils import TaskQueue
 
 router = APIRouter(prefix="/wechat-accounts", tags=["公众号管理"])
 legacy_router = APIRouter(prefix="/mps", tags=["公众号管理"], include_in_schema=False)
+
+
+def _feed_to_api(feed: Dict[str, Any]) -> Dict[str, Any]:
+    """将 feeds 表真实字段映射为前端 API 字段。"""
+    return {
+        "id": feed.get("id"),
+        "mp_name": feed.get("mp_name") or feed.get("name"),
+        "mp_cover": feed.get("mp_cover") or feed.get("cover") or feed.get("avatar_url"),
+        "mp_intro": feed.get("mp_intro") or feed.get("description"),
+        "status": feed.get("status"),
+        "created_at": feed.get("created_at"),
+        "faker_id": feed.get("faker_id"),
+        # 兼容旧前端字段，底层映射到现有 feeds 列
+        "update_time": feed.get("update_time") or feed.get("last_fetch"),
+        "sync_time": feed.get("sync_time") or feed.get("last_fetch"),
+    }
 
 
 @router.get("/search/{kw}", summary="搜索公众号")
@@ -67,7 +84,7 @@ async def list_wechat_accounts(
     try:
         filters = {}
         if kw:
-            filters["mp_name"] = {"ilike": f"%{kw}%"}
+            filters["name"] = {"ilike": f"%{kw}%"}
 
         # 获取总数
         total = await feed_repo.count_feeds(filters=filters)
@@ -81,14 +98,7 @@ async def list_wechat_accounts(
         return success_response(
             {
                 "list": [
-                    {
-                        "id": feed["id"],
-                        "mp_name": feed["mp_name"],
-                        "mp_cover": feed["mp_cover"],
-                        "mp_intro": feed["mp_intro"],
-                        "status": feed["status"],
-                        "created_at": feed["created_at"],
-                    }
+                    _feed_to_api(feed)
                     for feed in feeds
                 ],
                 "page": {"limit": limit, "offset": offset, "total": total},
@@ -122,9 +132,21 @@ async def sync_wechat_account_articles(
             )
 
         sync_interval = await runtime_settings.get_int("sync_interval", 60)
-        if mp.get("update_time") is None:
-            mp["update_time"] = int(time.time()) - sync_interval
-        time_span = int(time.time()) - int(mp.get("update_time", 0))
+        last_sync_epoch = 0
+        if mp.get("update_time") is not None:
+            try:
+                last_sync_epoch = int(mp.get("update_time", 0))
+            except Exception:
+                last_sync_epoch = 0
+        elif mp.get("last_fetch"):
+            try:
+                dt = datetime.fromisoformat(
+                    str(mp.get("last_fetch")).replace("Z", "+00:00")
+                )
+                last_sync_epoch = int(dt.timestamp())
+            except Exception:
+                last_sync_epoch = 0
+        time_span = int(time.time()) - int(last_sync_epoch or 0)
         if time_span < sync_interval:
             raise HTTPException(
                 status_code=status.HTTP_429_TOO_MANY_REQUESTS,
@@ -177,7 +199,7 @@ async def get_mp(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=error_response(code=40401, message="公众号不存在"),
             )
-        return success_response(mp)
+        return success_response(_feed_to_api(mp))
     except HTTPException:
         raise
     except Exception as e:
@@ -194,18 +216,40 @@ async def get_mp_by_article(
     url: str = Query(..., min_length=1), _current_user: dict = Depends(get_current_user)
 ):
     try:
-        from driver.wx.service import fetch_article
+        from driver.wx.service import fetch_article, get_state as wx_get_state
         import asyncio
+
+        user_id = (_current_user or {}).get("id")
+        logger.info(
+            f"[wx-by-article] start user_id={user_id} url={url}"
+        )
 
         # 在后台线程中执行同步的 Playwright 调用，避免在事件循环里直接使用 Sync API
         loop = asyncio.get_running_loop()
         env = await loop.run_in_executor(None, fetch_article, url)
+        logger.info(
+            f"[wx-by-article] fetch_article done ok={bool(env and env.get('ok'))} "
+            f"state={(env or {}).get('state')}"
+        )
 
         if not env or not env.get("ok"):
             # 统一错误 envelope：尽量透传 reason，保持原有错误响应风格
             err = (env or {}).get("error") or {}
             msg = err.get("message") or "获取公众号信息失败"
             reason = err.get("reason")
+            logger.warning(
+                f"[wx-by-article] failed user_id={user_id} "
+                f"state={(env or {}).get('state')} code={err.get('code')} stage={err.get('stage')} "
+                f"message={msg} reason={reason} retryable={err.get('retryable')} "
+                f"raw={(err.get('raw') or '')[:800]}"
+            )
+            try:
+                state_env = wx_get_state()
+                logger.info(
+                    f"[wx-by-article] current_wx_state user_id={user_id} state_env={state_env}"
+                )
+            except Exception as state_err:
+                logger.warning(f"[wx-by-article] get_state failed: {state_err}")
             raise HTTPException(
                 status_code=status.HTTP_502_BAD_GATEWAY,
                 detail=error_response(
@@ -215,11 +259,40 @@ async def get_mp_by_article(
                 ),
             )
 
-        return success_response(env.get("data"))
+        article_data = env.get("data")
+        try:
+            if isinstance(article_data, dict):
+                mp_info = article_data.get("mp_info")
+                logger.info(
+                    f"[wx-by-article] success user_id={user_id} "
+                    f"data_keys={list(article_data.keys())} "
+                    f"mp_info_keys={list(mp_info.keys()) if isinstance(mp_info, dict) else None}"
+                )
+                logger.info(
+                    "[wx-by-article] success_payload_preview "
+                    + json.dumps(
+                        {
+                            "mp_info": mp_info if isinstance(mp_info, dict) else mp_info,
+                            "title": article_data.get("title"),
+                            "url": article_data.get("url"),
+                            "author": article_data.get("author"),
+                        },
+                        ensure_ascii=False,
+                        default=str,
+                    )[:1200]
+                )
+            else:
+                logger.info(
+                    f"[wx-by-article] success user_id={user_id} non_dict_data_type={type(article_data)}"
+                )
+        except Exception as log_err:
+            logger.warning(f"[wx-by-article] success logging failed: {log_err}")
+
+        return success_response(article_data)
     except HTTPException:
         raise
     except Exception as e:
-        logger.info(f"获取公众号详情错误: {str(e)}")
+        logger.exception(f"[wx-by-article] unexpected error: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=error_response(code=50001, message=f"获取公众号信息失败: {str(e)}"),
@@ -260,6 +333,7 @@ async def create_wechat_account(
             cover_path = mp_cover
 
         now = datetime.now(timezone.utc)
+        now_iso = now.isoformat()
 
         # 检查公众号是否已存在（按 faker_id / mp_id）
         existing_feed_raw = await feed_repo.get_feed_by_faker_id(mp_id)
@@ -268,12 +342,12 @@ async def create_wechat_account(
         if existing_feed:
             # 更新现有记录
             update_data: Dict[str, Any] = {
-                "mp_name": mp_name,
-                "mp_intro": mp_intro,
-                "updated_at": now,
+                "name": mp_name,
+                "description": mp_intro,
+                "updated_at": now_iso,
             }
             if cover_path:
-                update_data["mp_cover"] = cover_path
+                update_data["avatar_url"] = cover_path
 
             await feed_repo.update_feed(existing_feed["id"], update_data)
             feed = {**existing_feed, **update_data}
@@ -281,15 +355,13 @@ async def create_wechat_account(
             # 创建新的Feed记录
             feed_data: Dict[str, Any] = {
                 "id": f"MP_WXS_{mpx_id}",
-                "mp_name": mp_name,
-                "mp_cover": cover_path,
-                "mp_intro": mp_intro,
+                "name": mp_name,
+                "avatar_url": cover_path,
+                "description": mp_intro,
                 "status": 1,  # 默认启用状态
-                "created_at": now,
-                "updated_at": now,
+                "created_at": now_iso,
+                "updated_at": now_iso,
                 "faker_id": mp_id,
-                "update_time": 0,
-                "sync_time": 0,
             }
             feed = await feed_repo.create_feed(feed_data)
 
@@ -304,15 +376,7 @@ async def create_wechat_account(
             )
 
         return success_response(
-            {
-                "id": feed["id"],
-                "mp_name": feed["mp_name"],
-                "mp_cover": feed.get("mp_cover"),
-                "mp_intro": feed.get("mp_intro"),
-                "status": feed.get("status"),
-                "faker_id": feed.get("faker_id", mp_id),
-                "created_at": feed.get("created_at"),
-            }
+            _feed_to_api({**feed, "faker_id": feed.get("faker_id", mp_id)})
         )
     except HTTPException:
         # 直接透传上面主动抛出的 HTTPException

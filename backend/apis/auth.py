@@ -31,6 +31,15 @@ def ApiSuccess(session=None, ext_data=None):
         logger.info("登录失败, 请检查上述错误信息")
 
 
+async def _issue_token(form_data: OAuth2PasswordRequestForm):
+    # 使用 Supabase 账号密码认证
+    credentials = UserCredentials(
+        username=form_data.username, password=form_data.password
+    )
+    auth_result = await authenticate_user_credentials(credentials)
+    return auth_result.model_dump()
+
+
 @router.get("/qr/code", summary="获取登录二维码")
 async def get_qrcode(_current_user=Depends(get_current_user)):
     session_id = None
@@ -104,13 +113,20 @@ async def qr_success(_current_user=Depends(get_current_user)):
 @router.post("/token", summary="获取Token")
 async def getToken(form_data: OAuth2PasswordRequestForm = Depends()):
     try:
-        # 使用Supabase认证
-        credentials = UserCredentials(
-            username=form_data.username, password=form_data.password
+        return await _issue_token(form_data)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_202_ACCEPTED,
+            detail=error_response(code=40101, message=f"认证失败: {str(e)}"),
         )
-        auth_result = await authenticate_user_credentials(credentials)
-        return auth_result.model_dump()
 
+
+@router.post("/login", summary="获取Token(兼容旧登录路径)")
+async def login_compat(form_data: OAuth2PasswordRequestForm = Depends()):
+    try:
+        return await _issue_token(form_data)
     except HTTPException:
         raise
     except Exception as e:

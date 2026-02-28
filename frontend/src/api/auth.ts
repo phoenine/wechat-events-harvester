@@ -21,7 +21,7 @@ export const login = (data: LoginParams) => {
   const formData = new URLSearchParams()
   formData.append('username', data.username)
   formData.append('password', data.password)
-  return http.post<LoginResult>('/wx/auth/login', formData, {
+  return http.post<LoginResult>('/wx/auth/token', formData, {
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded',
     },
@@ -37,6 +37,32 @@ export interface VerifyResult {
 export const verifyToken = () => {
   return http.get<VerifyResult>('/wx/auth/verify')
 }
+
+const normalizeQrUrl = (url?: string): string => {
+  if (!url || typeof url !== 'string') return ''
+  try {
+    const u = new URL(url)
+    // 后端在本机开发时常返回 host.docker.internal，浏览器侧替换为当前访问域名更稳妥
+    if (u.hostname === 'host.docker.internal' && typeof window !== 'undefined') {
+      u.hostname = window.location.hostname || 'localhost'
+    }
+    return u.toString()
+  } catch {
+    return url
+  }
+}
+
+const extractQrUrl = (payload: any): string => {
+  const raw =
+    payload?.image_url ||
+    payload?.code ||
+    payload?.data?.image_url ||
+    payload?.data?.code ||
+    payload?.data?.wx_login_url ||
+    ''
+  return normalizeQrUrl(raw)
+}
+
 let qrCodeIntervalId: ReturnType<typeof setInterval> | null = null
 let qrCodeCounter = 0
 
@@ -50,7 +76,13 @@ export const QRCode = () => {
 
     http
       .get('/wx/auth/qr/code')
-      .then(() => {
+      .then((codeRes: any) => {
+        const immediateUrl = extractQrUrl(codeRes)
+        if (immediateUrl) {
+          resolve({ code: immediateUrl })
+          return
+        }
+
         const maxAttempts = 120 // 约2分钟
         qrCodeIntervalId = setInterval(() => {
           qrCodeCounter++
@@ -65,7 +97,7 @@ export const QRCode = () => {
           http
             .get('/wx/auth/qr/url')
             .then((uRes: any) => {
-              const url = uRes?.image_url || uRes?.data?.image_url
+              const url = extractQrUrl(uRes)
               if (url) {
                 if (qrCodeIntervalId) {
                   clearInterval(qrCodeIntervalId)
@@ -91,9 +123,9 @@ export const checkQRCodeStatus = () => {
     }
     interval_status_Id = setInterval(() => {
       http
-        .get('/wx/auth/qr/status')
+      .get('/wx/auth/qr/status')
         .then((response: any) => {
-          const data = response?.data
+          const data = response?.data || response
           if (data?.login_status) {
             Message.success('授权成功')
             if (interval_status_Id) {

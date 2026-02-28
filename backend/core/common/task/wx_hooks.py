@@ -9,18 +9,23 @@ def build_wx_gather_hooks() -> WxGatherHooks:
     def _on_update_mps(mp_id: str, mp: dict) -> None:
         """更新公众号同步状态/时间（DB 副作用）。"""
         try:
-            from datetime import datetime
+            from datetime import datetime, timezone
             import time
             from core.feeds import feed_repo
 
             current_time = int(time.time())
             update_data = {
-                "sync_time": current_time,
-                "updated_at": datetime.now().isoformat(),
+                "last_fetch": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
             }
             if isinstance(mp, dict):
                 if mp.get("update_time"):
-                    update_data["update_time"] = mp.get("update_time")
+                    try:
+                        update_data["last_publish"] = datetime.fromtimestamp(
+                            int(mp.get("update_time")), tz=timezone.utc
+                        ).isoformat()
+                    except Exception:
+                        pass
                 if mp.get("status") is not None:
                     update_data["status"] = mp.get("status")
 
