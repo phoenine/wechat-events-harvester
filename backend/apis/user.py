@@ -3,14 +3,66 @@ import re
 from typing import Dict, Any
 from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
+from pydantic import BaseModel, Field
 from schemas import success_response, error_response
-from core.integrations.supabase.auth import get_current_user
+from core.integrations.supabase.auth import get_current_user, auth_manager
 from core.profiles import profile_repo
 from core.integrations.supabase.storage import supabase_storage_avatar
 from core.common.runtime_settings import runtime_settings
+from core.common.log import logger
 
 
 router = APIRouter(prefix="/user", tags=["用户资料"])
+
+
+class UpdateUserRequest(BaseModel):
+    username: str | None = Field(default=None, max_length=100)
+    nickname: str | None = Field(default=None, max_length=100)
+    email: str | None = Field(default=None, max_length=255)
+    avatar: str | None = Field(default=None, max_length=1000)
+    is_active: bool | None = None
+
+
+class ChangePasswordRequest(BaseModel):
+    old_password: str = Field(..., min_length=1, max_length=256)
+    new_password: str = Field(..., min_length=8, max_length=256)
+
+
+def _extract_avatar_object_path(value: str) -> str:
+    """
+    从数据库中保存的头像值解析对象路径。
+    兼容三种格式：
+    1) 纯对象路径（avatar/xx.png 或 avatars/xx.png）
+    2) public URL（.../storage/v1/object/public/{bucket}/{path}）
+    3) signed URL（.../storage/v1/object/sign/{bucket}/{path}?token=...）
+    """
+    raw = (value or "").strip()
+    if not raw:
+        return ""
+
+    if raw.startswith("http://") or raw.startswith("https://"):
+        public_prefix = f"/storage/v1/object/public/{supabase_storage_avatar.bucket}/"
+        sign_prefix = f"/storage/v1/object/sign/{supabase_storage_avatar.bucket}/"
+        if public_prefix in raw:
+            return raw.split(public_prefix, 1)[1].split("?", 1)[0]
+        if sign_prefix in raw:
+            return raw.split(sign_prefix, 1)[1].split("?", 1)[0]
+    return raw
+
+
+async def _resolve_avatar_url(value: str) -> str:
+    raw = (value or "").strip()
+    if not raw:
+        return ""
+    obj_path = _extract_avatar_object_path(raw)
+    if not obj_path:
+        return raw
+
+    # 优先返回 signed URL，兼容私有 bucket；失败再回退 public URL。
+    try:
+        return await supabase_storage_avatar.sign_url(obj_path, expires=7 * 24 * 3600)
+    except Exception:
+        return supabase_storage_avatar.public_url(obj_path)
 
 
 def _render_storage_path(template: str, values: dict[str, str]) -> str:
@@ -53,7 +105,7 @@ async def get_user_info(current_user: Dict[str, Any] = Depends(get_current_user)
                 "nickname": profile.get("nickname")
                 or metadata.get("nickname")
                 or email,
-                "avatar": profile.get("avatar_url") or "",
+                "avatar": await _resolve_avatar_url(profile.get("avatar_url") or ""),
                 "role": role,
                 "is_active": True,
             }
@@ -109,7 +161,7 @@ async def upload_avatar(
             },
         )
 
-        avatar_url = await supabase_storage_avatar.upload_bytes(
+        _ = await supabase_storage_avatar.upload_bytes(
             data=bytes(file_bytes),
             path=object_path,
             content_type=file.content_type or "image/jpeg",
@@ -121,14 +173,104 @@ async def upload_avatar(
                 detail=error_response(code=40101, message="未登录或会话已失效"),
             )
 
-        await profile_repo.update_avatar(user_id, avatar_url)
-        return success_response(data={"avatar": avatar_url})
+        # 存储对象路径，避免把不稳定的 URL（域名/公网策略）固化到数据库
+        await profile_repo.update_avatar(user_id, object_path)
+        return success_response(data={"avatar": await _resolve_avatar_url(object_path)})
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_406_NOT_ACCEPTABLE,
             detail=f"头像上传失败: {str(e)}",
+        )
+
+
+@router.put("", summary="更新当前用户资料")
+async def update_user_info(
+    payload: UpdateUserRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    try:
+        user_id = str(current_user.get("id") or "")
+        if not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=error_response(code=40101, message="未登录或会话已失效"),
+            )
+
+        profile_patch: Dict[str, Any] = {}
+        if payload.nickname is not None:
+            profile_patch["nickname"] = payload.nickname.strip()
+        if payload.avatar is not None:
+            profile_patch["avatar_url"] = _extract_avatar_object_path(payload.avatar)
+        if profile_patch:
+            await profile_repo.upsert_profile(user_id, profile_patch)
+
+        # 尝试同步 Supabase Auth 用户邮箱/用户名（用户名写入 user_metadata）
+        # 失败时不阻断 profile 更新，避免前端“保存失败但实际已保存”的体验问题。
+        email = (payload.email or "").strip() if payload.email is not None else None
+        username = (
+            (payload.username or "").strip() if payload.username is not None else None
+        )
+        if email is not None or username is not None:
+            try:
+                service_client = auth_manager.get_client(use_service=True)
+                update_data: Dict[str, Any] = {}
+                if email:
+                    update_data["email"] = email
+                if username is not None:
+                    update_data["user_metadata"] = {"username": username}
+                if update_data:
+                    service_client.auth.admin.update_user_by_id(user_id, update_data)
+            except Exception as sync_err:
+                logger.warning(f"用户资料已更新，但 Auth 字段同步失败: {sync_err}")
+
+        return success_response(message="用户信息更新成功")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=error_response(code=50001, message=f"更新用户信息失败: {str(e)}"),
+        )
+
+
+@router.put("/password", summary="修改当前用户密码")
+async def change_password(
+    payload: ChangePasswordRequest,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+):
+    try:
+        email = (current_user or {}).get("email")
+        user_id = (current_user or {}).get("id")
+        if not email or not user_id:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail=error_response(code=40101, message="未登录或会话已失效"),
+            )
+
+        if payload.old_password == payload.new_password:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=error_response(code=40001, message="新密码不能与旧密码相同"),
+            )
+
+        # 校验旧密码
+        await auth_manager.sign_in(email, payload.old_password)
+
+        # 使用 service role 直接更新密码
+        service_client = auth_manager.get_client(use_service=True)
+        service_client.auth.admin.update_user_by_id(
+            str(user_id),
+            {"password": payload.new_password},
+        )
+        return success_response(message="密码修改成功")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=error_response(code=50001, message=f"修改密码失败: {str(e)}"),
         )
 
 

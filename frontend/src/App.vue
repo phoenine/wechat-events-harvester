@@ -4,7 +4,7 @@
     <a-layout-header class="app-header" v-if="route.path !== '/login'">
       <div class="header-left">
         <div class="logo">
-          <img :src="logo" alt="avatar" :width="60" style="margin-right:1rem;">
+          <img :src="logo" alt="avatar" :width="40" style="margin-right:1rem;">
           <router-link to="/">{{ appTitle }}</router-link>
           <a-tooltip
             v-if="hasLogined"
@@ -172,10 +172,9 @@
         <a-dropdown position="br" trigger="click">
           <div class="user-info">
             <a-avatar :size="36">
-              <img v-if="userInfo.avatar" :src="userInfo.avatar" alt="avatar">
-              <icon-user v-else />
+              <img :src="avatarSrc" alt="avatar" @error="handleAvatarError">
             </a-avatar>
-            <span class="username">{{ userInfo.username }}</span>
+            <span class="username">{{ displayName }}</span>
           </div>
           <template #content>
             <a-doption @click="goToEditUser">
@@ -249,14 +248,18 @@ const showAuthQrcode = () => {
 }
 provide('showAuthQrcode', showAuthQrcode)
 const appTitle = computed(() => import.meta.env.VITE_APP_TITLE || '微信公众号订阅助手')
-const logo = ref("/assets/logo.svg")
+const logo = ref("/logo.svg")
 const router = useRouter()
 const route = useRoute()
 const collapsed = ref(false)
 const userInfo = ref({
   username: '',
+  nickname: '',
   avatar: ''
 })
+const DEFAULT_AVATAR = '/default-avatar.png'
+const avatarSrc = ref(DEFAULT_AVATAR)
+const displayName = computed(() => userInfo.value.nickname || userInfo.value.username || '')
 const haswxLogined = ref(false)
 const hasLogined = ref(false)
 const isAuthenticated = computed(() => {
@@ -267,10 +270,20 @@ const isAuthenticated = computed(() => {
 const fetchUserInfo = async () => {
   try {
     const res = await getCurrentUser()
-    userInfo.value = res
+    userInfo.value = {
+      username: res?.username || '',
+      nickname: res?.nickname || '',
+      avatar: res?.avatar || ''
+    }
+    avatarSrc.value = userInfo.value.avatar || DEFAULT_AVATAR
   } catch (error) {
     console.error('获取用户信息失败', error)
+    avatarSrc.value = DEFAULT_AVATAR
   }
+}
+
+const handleAvatarError = () => {
+  avatarSrc.value = DEFAULT_AVATAR
 }
 
 const fetchSysInfo = async () => {

@@ -47,8 +47,8 @@
         <a-form-item label="用户名" field="username">
           <a-input
             v-model="form.username"
-            placeholder="请输入用户名"
-            allow-clear
+            placeholder="用户名不可修改"
+            disabled
           >
             <template #prefix><icon-user /></template>
           </a-input>
@@ -67,8 +67,8 @@
         <a-form-item label="邮箱" field="email">
           <a-input
             v-model="form.email"
-            placeholder="请输入邮箱"
-            allow-clear
+            placeholder="邮箱不可修改"
+            disabled
           >
             <template #prefix><icon-email /></template>
           </a-input>
@@ -105,11 +105,7 @@ const form = ref({
 })
 
 const rules = {
-  username: [{ required: true, message: '请输入用户名' }],
-  email: [
-    { required: true, message: '请输入邮箱' },
-    { type: 'email', message: '请输入有效的邮箱地址' }
-  ]
+  nickname: [{ required: true, message: '请输入昵称' }]
 }
 
 const handleUploadChange = async (options: any) => {
@@ -161,17 +157,41 @@ const fetchUserInfo = async () => {
       avatar: res.avatar 
     }
   } catch (error) {
-    router.push('/login')
+    const status = (error as any)?.response?.status
+    const message = typeof error === 'string' ? error : (error as any)?.message
+    const isUnauthorized = status === 401 || String(message || '').includes('未登录')
+
+    if (isUnauthorized) {
+      localStorage.removeItem('token')
+      router.push('/login')
+    } else {
+      Message.error('获取用户信息失败，请稍后重试')
+      console.error('获取用户信息失败', error)
+    }
   } finally {
     loading.value = false
   }
 }
 
 const handleSubmit = async () => {
-    let response=await updateUserInfo(form.value)
-    if (response.code === 0){
+  loading.value = true
+  try {
+    const response = await updateUserInfo({
+      nickname: form.value.nickname,
+      avatar: form.value.avatar
+    })
+    if (response?.code === 0) {
       Message.success(response?.message || '更新成功')
+      router.push('/')
+      return
     }
+    Message.error(response?.message || '更新失败')
+  } catch (error) {
+    const message = typeof error === 'string' ? error : (error as any)?.message
+    Message.error(message || '更新失败，请稍后重试')
+  } finally {
+    loading.value = false
+  }
 }
 
 const resetForm = () => {
