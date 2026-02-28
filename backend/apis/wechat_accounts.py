@@ -23,7 +23,6 @@ from core.common.log import logger
 from core.common.runtime_settings import runtime_settings
 from core.common.res import save_avatar_locally
 from jobs.article import UpdateArticle
-from core.common.utils import TaskQueue
 
 
 router = APIRouter(prefix="/wechat-accounts", tags=["公众号管理"])
@@ -365,15 +364,17 @@ async def create_wechat_account(
             }
             feed = await feed_repo.create_feed(feed_data)
 
+        # 订阅添加只保存公众号信息，不自动触发采集。
+        # 文章抓取改为由用户手动点击“刷新”触发，以降低微信风控概率。
         # 在这里实现第一次添加时获取公众号文章
-        if not existing_feed:
-            max_page = await runtime_settings.get_int("max_page", 2)
-            TaskQueue.add_task(
-                collect_feed_articles,
-                feed,
-                on_article=UpdateArticle,
-                max_page=max_page,
-            )
+        # if not existing_feed:
+        #     max_page = await runtime_settings.get_int("max_page", 2)
+        #     TaskQueue.add_task(
+        #         collect_feed_articles,
+        #         feed,
+        #         on_article=UpdateArticle,
+        #         max_page=max_page,
+        #     )
 
         return success_response(
             _feed_to_api({**feed, "faker_id": feed.get("faker_id", mp_id)})

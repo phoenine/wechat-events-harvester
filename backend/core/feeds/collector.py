@@ -2,6 +2,7 @@ from typing import Any, Callable, Optional
 
 from core.integrations.wx import create_gather
 from core.common.log import logger
+from core.common.runtime_settings import runtime_settings
 
 
 def _feed_value(feed: Any, key: str) -> Any:
@@ -28,6 +29,12 @@ def collect_feed_articles(
         raise ValueError("公众号缺少 faker_id, 无法采集")
 
     wx = create_gather()
+    gather_content = runtime_settings.get_bool_sync("gather.content", True)
+    gather_mode = runtime_settings.get_sync("gather.model", "app")
+    logger.info(
+        f"[collect-feed] mp_id={mp_id} mode={gather_mode} gather_content={gather_content} "
+        f"start_page={start_page} max_page={max_page}"
+    )
     try:
         wx.get_Articles(
             faker_id,
@@ -38,6 +45,7 @@ def collect_feed_articles(
             start_page=start_page,
             MaxPage=max_page,
             interval=interval if interval is not None else 0,
+            Gather_Content=gather_content,
         )
     except Exception as e:
         logger.error(f"采集公众号[{mp_name or mp_id}]失败: {e}")

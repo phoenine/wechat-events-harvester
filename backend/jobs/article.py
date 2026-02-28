@@ -3,6 +3,7 @@ from core.common.app_settings import settings
 from core.common.log import logger
 from core.common.utils.async_tools import run_sync
 from core.integrations.supabase.storage import supabase_storage_articles
+from core.articles.content_format import format_content
 from bs4 import BeautifulSoup
 from urllib.parse import urlparse
 import mimetypes
@@ -127,6 +128,19 @@ def _normalize_article_for_db(article: dict) -> dict:
     return {k: v for k, v in data.items() if k in ARTICLE_COLUMNS}
 
 
+def _ensure_content_markdown(article: dict) -> dict:
+    content = str(article.get("content") or "").strip()
+    if not content:
+        return article
+    if str(article.get("content_md") or "").strip():
+        return article
+    try:
+        article["content_md"] = format_content(content, "markdown")
+    except Exception as e:
+        logger.warning(f"生成 content_md 失败: {e}")
+    return article
+
+
 def UpdateArticle(art: dict, check_exist: bool = False):
     """更新文章"""
     mps_count = 0
@@ -134,6 +148,7 @@ def UpdateArticle(art: dict, check_exist: bool = False):
         pass
     try:
         art = _upload_article_images(dict(art))
+        art = _ensure_content_markdown(art)
         art = _normalize_article_for_db(art)
         # 使用 Supabase 创建文章
         result = article_repo.sync_create_article(art)
