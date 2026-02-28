@@ -77,10 +77,11 @@ def _upload_article_images(article: dict) -> dict:
         if not src or src.startswith("data:"):
             continue
         try:
-            resp = requests.get(src, timeout=15)
-            resp.raise_for_status()
-            ctype = (resp.headers.get("Content-Type") or "image/jpeg").split(";")[0]
-            filename = _guess_filename(src, ctype, i)
+            # 已经是目标存储链接则跳过
+            if f"/storage/v1/object/public/{supabase_storage_articles.bucket}/" in src:
+                continue
+
+            filename = _guess_filename(src, "", i)
             path = _format_storage_path(
                 supabase_storage_articles.path,
                 {
@@ -90,13 +91,18 @@ def _upload_article_images(article: dict) -> dict:
                     "filename": filename,
                 },
             )
-            run_sync(
-                supabase_storage_articles.upload_bytes(
-                    path=path,
-                    data=resp.content,
-                    content_type=ctype,
+            # 目标已存在则直接复用，避免重复下载和上传
+            if not run_sync(supabase_storage_articles.exists(path)):
+                resp = requests.get(src, timeout=15)
+                resp.raise_for_status()
+                ctype = (resp.headers.get("Content-Type") or "image/jpeg").split(";")[0]
+                run_sync(
+                    supabase_storage_articles.upload_bytes(
+                        path=path,
+                        data=resp.content,
+                        content_type=ctype,
+                    )
                 )
-            )
             img["src"] = supabase_storage_articles.public_url(path)
             if "data-src" in img.attrs:
                 del img.attrs["data-src"]

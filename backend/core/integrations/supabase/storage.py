@@ -44,9 +44,17 @@ class SupabaseStorage:
             content=data,
         )
         if resp.status_code not in (200, 201):
+            body = (resp.text or "")[:300]
+            low = body.lower()
+            # 兼容返回 400 + {"statusCode":"409","error":"Duplicate"} 的场景，按已存在处理
+            if "duplicate" in low or "already exists" in low or '"409"' in low:
+                logger.info(
+                    f"[supabase-storage] object exists, skip upload bucket={self.bucket} path={path}"
+                )
+                return self.public_url(path)
             logger.error(
                 f"[supabase-storage] upload failed bucket={self.bucket} path={path} "
-                f"status={resp.status_code} body={resp.text[:300]}"
+                f"status={resp.status_code} body={body}"
             )
             raise Exception(resp.text)
         # 返回可访问 URL，而不是对象路径
@@ -81,6 +89,19 @@ class SupabaseStorage:
 
     def public_url(self, path: str) -> str:
         return f"{self.url}/storage/v1/object/public/{self.bucket}/{path}"
+
+    async def exists(self, path: str) -> bool:
+        """检查对象是否存在。"""
+        if not path:
+            return False
+        url = f"{self.url}/storage/v1/object/{self.bucket}/{path}"
+        resp = await self._client.head(url, headers=self._headers())
+        if resp.status_code == 200:
+            return True
+        if resp.status_code in (404, 400):
+            return False
+        # 非预期状态，按不存在处理，避免影响主流程
+        return False
 
     async def upload_qr(self, data: bytes) -> dict[str, str]:
         path = self.path

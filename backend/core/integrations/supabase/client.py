@@ -47,6 +47,26 @@ class SupabaseClient:
         """获取表操作对象"""
         return self.get_client().table(table_name)
 
+    def _apply_order(self, query: Any, order: str):
+        """
+        兼容项目内常用排序写法：
+        - "created_at"
+        - "created_at.asc"
+        - "created_at.desc"
+        - "created_at.desc,publish_at.asc"
+        """
+        tokens = [seg.strip() for seg in str(order).split(",") if seg.strip()]
+        for token in tokens:
+            parts = token.split(".")
+            column = parts[0].strip()
+            if not column:
+                continue
+
+            direction = parts[1].lower() if len(parts) > 1 else "asc"
+            desc = direction == "desc"
+            query = query.order(column, desc=desc)
+        return query
+
     #! 以下为基础CRUD操作
     async def select(
         self,
@@ -87,7 +107,7 @@ class SupabaseClient:
 
             # 添加排序
             if order:
-                query = query.order(order)
+                query = self._apply_order(query, order)
 
             # 添加分页
             if limit:
