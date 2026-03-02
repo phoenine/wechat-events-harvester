@@ -29,17 +29,14 @@ class ArticleRepository:
     async def get_articles(
         self,
         mp_id: Optional[str] = None,
-        status: Optional[int] = None,
         limit: Optional[int] = None,
         offset: Optional[int] = None,
-        order_by: str = "publish_at.desc",
+        order_by: str = "publish_time.desc",
     ):
-        """根据公众号ID和状态获取文章列表"""
+        """根据公众号ID获取文章列表"""
         filters = {}
         if mp_id is not None:
             filters["mp_id"] = mp_id
-        if status is not None:
-            filters["status"] = status
 
         return await self.client.select(
             self.ARTICLE_TABLE,
@@ -77,23 +74,24 @@ class ArticleRepository:
         self, start_time: datetime, end_time: datetime, limit: Optional[int] = None
     ):
         filters = {
-            "publish_at": {"gte": start_time.isoformat(), "lte": end_time.isoformat()}
+            "publish_time": {
+                "gte": int(start_time.timestamp()),
+                "lte": int(end_time.timestamp()),
+            }
         }
         return await self.client.select(
-            self.ARTICLE_TABLE, filters=filters, order="publish_at.desc", limit=limit
+            self.ARTICLE_TABLE, filters=filters, order="publish_time.desc", limit=limit
         )
 
     async def count_articles_base(self, filters: Optional[Dict] = None):
         """统计文章数量"""
         return await self.client.count(self.ARTICLE_TABLE, filters=filters)
 
-    async def count_articles(self, mp_id=None, status=None):
+    async def count_articles(self, mp_id=None):
         """统计文章数量"""
         filters = {}
         if mp_id is not None:
             filters["mp_id"] = mp_id
-        if status is not None:
-            filters["status"] = status
         return await self.client.count(self.ARTICLE_TABLE, filters=filters)
 
     async def search_articles(self, keyword: str, limit: int = 100):
@@ -160,9 +158,10 @@ class ArticleRepository:
 
     async def clean_expired_articles(self, days: int = 15):
         cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
+        cutoff_ts = int(cutoff_date.timestamp())
         expired_articles = await self.client.select(
             self.ARTICLE_TABLE,
-            filters={"publish_at": {"lt": cutoff_date.isoformat()}, "status": 1},
+            filters={"publish_time": {"lt": cutoff_ts}},
         )
 
         if not expired_articles:

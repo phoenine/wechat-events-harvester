@@ -27,21 +27,11 @@ CREATE TABLE IF NOT EXISTS public.articles (
     mp_id TEXT REFERENCES public.feeds (id) ON DELETE CASCADE,
     title TEXT NOT NULL,
     author TEXT,
-    digest TEXT,
     content TEXT,
     content_md TEXT,
     cover_url TEXT,
     publish_time BIGINT,
-    publish_at TIMESTAMP WITH TIME ZONE,
-    read_num INTEGER DEFAULT 0,
-    like_num INTEGER DEFAULT 0,
-    comment_count INTEGER DEFAULT 0,
-    reward_num INTEGER DEFAULT 0,
     url TEXT,
-    copyright_stat INTEGER DEFAULT 0,
-    is_top INTEGER DEFAULT 0,
-    first_data TEXT,
-    status INTEGER DEFAULT 1,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
@@ -118,10 +108,6 @@ CREATE TABLE IF NOT EXISTS public.auth_sessions (
 
 -- 创建索引
 CREATE INDEX IF NOT EXISTS idx_articles_mp_id ON public.articles (mp_id);
-
-CREATE INDEX IF NOT EXISTS idx_articles_publish_at ON public.articles (publish_at);
-
-CREATE INDEX IF NOT EXISTS idx_articles_status ON public.articles (status);
 
 CREATE INDEX IF NOT EXISTS idx_feeds_status ON public.feeds (status);
 

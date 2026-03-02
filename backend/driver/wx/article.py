@@ -355,6 +355,15 @@ class WXArticleFetcher:
                     )
                     or ""
                 )
+                if not author:
+                    # 兼容公众号文章页作者节点：#js_author_name_text / #js_author_name
+                    author = (
+                        page.locator("#js_author_name_text").text_content() or ""
+                    ).strip()
+                if not author:
+                    author = (
+                        page.locator("#js_author_name").text_content() or ""
+                    ).strip()
                 description = (
                     page.locator('meta[property="og:description"]').get_attribute(
                         "content"

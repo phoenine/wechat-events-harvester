@@ -8,9 +8,7 @@ def clean_duplicate_articles():
     """
     try:
         # 获取所有文章
-        articles = article_repo.sync_get_articles(
-            filters={"status": 1}, order_by="publish_time.desc"
-        )
+        articles = article_repo.sync_get_articles(order_by="publish_time.desc")
 
         # 如果没有文章，直接返回
         if not articles:

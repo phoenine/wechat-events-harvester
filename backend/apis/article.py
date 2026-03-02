@@ -53,33 +53,22 @@ async def _delete_article_storage_objects(article: Dict[str, Any]) -> int:
 @router.get("", summary="获取文章列表")
 async def get_articles(
     mp_id: Optional[str] = Query(None),
-    status: Optional[str] = Query(None),
     offset: int = Query(0, ge=0),
     limit: int = Query(5, ge=1, le=100),
     _current_user: dict = Depends(get_current_user),
 ):
     try:
-        # 转换状态参数
-        status_int = None
-        if status is not None:
-            try:
-                status_int = int(status)
-            except ValueError:
-                status_int = 1  # 默认状态
-
         articles_raw = await article_repo.get_articles(
             mp_id=mp_id,
-            status=status_int,
             limit=limit,
             offset=offset,
-            order_by="publish_at",
+            order_by="publish_time.desc",
         )
         # 显式标注类型，便于静态类型检查
         articles: List[Dict[str, Any]] = cast(List[Dict[str, Any]], articles_raw)
 
         total = await article_repo.count_articles(
             mp_id=mp_id,
-            status=status_int,
         )
 
         # 获取相关的feed信息
@@ -153,7 +142,7 @@ async def get_next_article(
             )
         # 获取同一公众号的文章
         articles_raw = await article_repo.get_articles(
-            mp_id=current_article["mp_id"], order_by="publish_at"
+            mp_id=current_article["mp_id"], order_by="publish_time.desc"
         )
         articles: List[Dict[str, Any]] = cast(List[Dict[str, Any]], articles_raw)
 
@@ -200,7 +189,7 @@ async def get_prev_article(
 
         # 获取同一公众号的文章
         articles_raw = await article_repo.get_articles(
-            mp_id=current_article["mp_id"], order_by="publish_at"
+            mp_id=current_article["mp_id"], order_by="publish_time.desc"
         )
         articles: List[Dict[str, Any]] = cast(List[Dict[str, Any]], articles_raw)
 
@@ -231,7 +220,7 @@ async def get_prev_article(
         )
 
 
-@router.delete("/clean_expired", summary="清理过期文章(删除15天前的publish_at)")
+@router.delete("/clean_expired", summary="清理过期文章(删除15天前的publish_time)")
 async def clean_expired_articles(_current_user: dict = Depends(get_current_user)):
     try:
         deleted_count = await article_repo.clean_expired_articles()

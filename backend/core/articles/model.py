@@ -10,9 +10,7 @@ class ArticleBase(BaseModel):
     pic_url: Optional[str] = None
     url: Optional[str] = None
     description: Optional[str] = None
-    status: int = 1
     publish_time: Optional[int] = None
-    publish_at: Optional[datetime] = None
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

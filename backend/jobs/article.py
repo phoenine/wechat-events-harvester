@@ -16,21 +16,11 @@ ARTICLE_COLUMNS = {
     "mp_id",
     "title",
     "author",
-    "digest",
     "content",
     "content_md",
     "cover_url",
     "publish_time",
-    "publish_at",
-    "read_num",
-    "like_num",
-    "comment_count",
-    "reward_num",
     "url",
-    "copyright_stat",
-    "is_top",
-    "first_data",
-    "status",
     "created_at",
     "updated_at",
 }
@@ -118,8 +108,6 @@ def _normalize_article_for_db(article: dict) -> dict:
     data = dict(article or {})
 
     # 兼容旧字段命名
-    if data.get("description") and not data.get("digest"):
-        data["digest"] = data.get("description")
     if data.get("pic_url") and not data.get("cover_url"):
         data["cover_url"] = data.get("pic_url")
 

@@ -1,6 +1,5 @@
 from core.articles import article_repo
 from core.feeds import feed_repo
-from core.common.status import DataStatus as DATA_STATUS
 import json
 
 
@@ -31,10 +30,8 @@ def laxArticle():
     # 有内容的文章数量
     info.has_content_count = info.all_count - info.no_content_count
 
-    # 获取删除的文章 (status != 1)
-    info.wrong_count = article_repo.sync_count_articles(
-        filters={"status": {"neq": DATA_STATUS["ACTIVE"]}}
-    )
+    # 兼容旧统计字段（articles 已不再使用 status）
+    info.wrong_count = 0
 
     # 公众号总数
     info.mp_all_count = feed_repo.sync_count_feeds()
