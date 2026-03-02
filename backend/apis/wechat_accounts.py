@@ -276,7 +276,6 @@ async def get_mp_by_article(
                             "mp_info": mp_info if isinstance(mp_info, dict) else mp_info,
                             "title": article_data.get("title"),
                             "url": article_data.get("url"),
-                            "author": article_data.get("author"),
                         },
                         ensure_ascii=False,
                         default=str,

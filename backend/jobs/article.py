@@ -15,7 +15,6 @@ ARTICLE_COLUMNS = {
     "id",
     "mp_id",
     "title",
-    "author",
     "content",
     "content_md",
     "cover_url",

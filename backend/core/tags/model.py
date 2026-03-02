@@ -3,13 +3,11 @@ from pydantic import BaseModel
 
 
 class Tags(BaseModel):
-    id: str
+    id: int
     name: Optional[str] = None
-    cover: Optional[str] = None
+    description: Optional[str] = None
     intro: Optional[str] = None
-    status: Optional[int] = None
-    mps_id: Optional[str] = None
-    sync_time: Optional[int] = None
-    update_time: Optional[int] = None
+    cover: Optional[str] = None
+    status: Optional[int] = 1
     created_at: Optional[str] = None   # ISO datetime string
     updated_at: Optional[str] = None   # ISO datetime string

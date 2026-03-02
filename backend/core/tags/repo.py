@@ -33,7 +33,7 @@ class TagRepository:
         return await self.client.select(
             "articles",
             filters={"id": {"in": article_ids}},
-            order="publish_at.desc",
+            order="publish_time.desc",
             limit=limit,
         )
 

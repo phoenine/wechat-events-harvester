@@ -1,4 +1,3 @@
-import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from datetime import datetime, timezone
 from core.tags import tag_repo
@@ -8,6 +7,14 @@ from core.common.log import logger
 
 
 router = APIRouter(prefix="/tags", tags=["标签管理"])
+
+
+def _to_api_tag(tag: dict) -> dict:
+    item = dict(tag or {})
+    item["intro"] = item.get("description") or ""
+    item["cover"] = item.get("cover") or ""
+    item["status"] = item.get("status", 1)
+    return item
 
 
 @router.get("", summary="获取标签列表", description="分页获取所有标签信息")
@@ -20,6 +27,7 @@ async def get_tags(
     try:
         total = await tag_repo.count_tags()
         tags = await tag_repo.get_tags(limit=limit, offset=offset)
+        tags = [_to_api_tag(t) for t in tags]
         return success_response(
             data={
                 "list": tags,
@@ -42,19 +50,20 @@ async def create_tag(
     """创建新标签"""
 
     try:
+        description = tag.intro or None
+        if not description:
+            description = getattr(tag, "description", None)
         tag_data = {
-            "id": str(uuid.uuid4()),
             "name": tag.name or "",
+            "description": description or "",
             "cover": tag.cover or "",
-            "intro": tag.intro or "",
-            "mps_id": tag.mps_id,
-            "status": tag.status,
+            "status": tag.status if tag.status is not None else 1,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
 
         new_tag = await tag_repo.create_tag(tag_data)
-        return success_response(data=new_tag)
+        return success_response(data=_to_api_tag(new_tag))
     except Exception as e:
         logger.error(e)
         raise HTTPException(
@@ -78,7 +87,7 @@ async def get_tag(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=error_response(code=404, message="Tag not found"),
         )
-    return success_response(data=tag)
+    return success_response(data=_to_api_tag(tag))
 
 
 @router.put(
@@ -100,18 +109,20 @@ async def update_tag(
                 detail=error_response(code=404, message="Tag not found"),
             )
 
+        description = tag_data.intro or None
+        if not description:
+            description = getattr(tag_data, "description", None)
         update_data = {
             "name": tag_data.name,
-            "cover": tag_data.cover,
-            "intro": tag_data.intro,
-            "status": tag_data.status,
-            "mps_id": tag_data.mps_id,
+            "description": description or "",
+            "cover": tag_data.cover or "",
+            "status": tag_data.status if tag_data.status is not None else 1,
             "updated_at": datetime.now(timezone.utc).isoformat(),
         }
 
         updated_tags = await tag_repo.update_tag(tag_id, update_data)
         if updated_tags:
-            return success_response(data=updated_tags[0])
+            return success_response(data=_to_api_tag(updated_tags[0]))
         else:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

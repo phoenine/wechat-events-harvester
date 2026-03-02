@@ -5,14 +5,15 @@ from pydantic import BaseModel
 
 class TagsCreate(BaseModel):
     name: str
-    cover: Optional[str] = None
+    description: Optional[str] = None
     intro: Optional[str] = None
-    mps_id: str
-    status: int = 1
+    cover: Optional[str] = None
+    mps_id: Optional[str] = None
+    status: Optional[int] = None
 
 
 class Tags(TagsCreate):
-    id: str
+    id: int
     created_at: datetime
     updated_at: datetime
 

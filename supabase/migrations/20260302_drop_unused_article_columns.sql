@@ -1,5 +1,6 @@
 -- 删除 articles 表中不再使用的字段
 ALTER TABLE public.articles
+    DROP COLUMN IF EXISTS author,
     DROP COLUMN IF EXISTS digest,
     DROP COLUMN IF EXISTS publish_at,
     DROP COLUMN IF EXISTS read_num,

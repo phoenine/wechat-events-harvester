@@ -26,7 +26,6 @@ CREATE TABLE IF NOT EXISTS public.articles (
     id TEXT PRIMARY KEY,
     mp_id TEXT REFERENCES public.feeds (id) ON DELETE CASCADE,
     title TEXT NOT NULL,
-    author TEXT,
     content TEXT,
     content_md TEXT,
     cover_url TEXT,
@@ -41,6 +40,8 @@ CREATE TABLE IF NOT EXISTS public.tags (
     id SERIAL PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
     description TEXT,
+    cover TEXT,
+    status INTEGER DEFAULT 1,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );

@@ -270,10 +270,6 @@ class WxGather:
                     "pic_url": data["cover"],
                     "content": data.get("content", ""),
                     "publish_time": data["update_time"],
-                    "author": data.get("author")
-                    or data.get("author_name")
-                    or data.get("nickname")
-                    or "",
                 }
                 if "digest" in data:
                     art["description"] = data["digest"]

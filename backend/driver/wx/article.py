@@ -344,26 +344,11 @@ class WXArticleFetcher:
                         retryable=False,
                     )
 
-                # 获取标题/作者/描述/题图（容错）
+                # 获取标题/描述/题图（容错）
                 title = (
                     page.locator('meta[property="og:title"]').get_attribute("content")
                     or ""
                 )
-                author = (
-                    page.locator('meta[property="og:article:author"]').get_attribute(
-                        "content"
-                    )
-                    or ""
-                )
-                if not author:
-                    # 兼容公众号文章页作者节点：#js_author_name_text / #js_author_name
-                    author = (
-                        page.locator("#js_author_name_text").text_content() or ""
-                    ).strip()
-                if not author:
-                    author = (
-                        page.locator("#js_author_name").text_content() or ""
-                    ).strip()
                 description = (
                     page.locator('meta[property="og:description"]').get_attribute(
                         "content"
@@ -419,7 +404,6 @@ class WXArticleFetcher:
                 info["publish_time"] = publish_time
                 info["content"] = content
                 info["images"] = images
-                info["author"] = author
                 info["description"] = description
                 info["topic_image"] = topic_image
 

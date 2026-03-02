@@ -32,7 +32,6 @@ class WxArticleInfo(TypedDict, total=False):
     mp_info: WxMpInfo
     mp_id: str
     pic_url: str
-    author: str
     description: str
     topic_image: str        # 话题 / 专题头图（如有）
 
