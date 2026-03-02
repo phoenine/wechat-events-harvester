@@ -366,6 +366,7 @@ import {
 import {
   getArticles,
   deleteArticle as deleteArticleApi,
+  deleteArticlesBatch,
   ClearArticle,
   ClearDuplicateArticle,
   getArticleDetail,
@@ -375,7 +376,7 @@ import { ExportOPML, ExportMPS, ImportMPS } from "@/api/export";
 import ExportModal from "@/components/ExportModal.vue";
 import { getSubscriptions, UpdateMps, deleteMpApi } from "@/api/subscription";
 import { Message, Modal } from "@arco-design/web-vue";
-import { formatDateTime } from "@/utils/date";
+import { formatDateTime, formatTimestamp } from "@/utils/date";
 import router from "@/router";
 import TextIcon from "@/components/TextIcon.vue";
 
@@ -420,6 +421,17 @@ const statusColorMap = {
   deleted: "red",
 };
 
+const formatPublishTime = (record: any) => {
+  const raw = record?.publish_time;
+  if (raw !== undefined && raw !== null && String(raw).trim() !== "") {
+    const ts = Number(raw);
+    if (!Number.isNaN(ts)) {
+      return formatTimestamp(ts);
+    }
+  }
+  return formatDateTime(record?.publish_at);
+};
+
 const columns = [
   {
     title: "文章标题",
@@ -453,6 +465,17 @@ const columns = [
     },
   },
   {
+    title: "发布时间",
+    dataIndex: "publish_at",
+    width: "140",
+    render: ({ record }) =>
+      h(
+        "span",
+        { style: { color: "rgb(var(--color-text-3))", fontSize: "12px" } },
+        formatPublishTime(record)
+      ),
+  },
+  {
     title: "更新时间",
     dataIndex: "created_at",
     width: "140",
@@ -461,17 +484,6 @@ const columns = [
         "span",
         { style: { color: "var(--color-text-3)", fontSize: "12px" } },
         formatDateTime(record.created_at)
-      ),
-  },
-  {
-    title: "发布时间",
-    dataIndex: "publish_at",
-    width: "140",
-    render: ({ record }) =>
-      h(
-        "span",
-        { style: { color: "rgb(var(--color-text-3))", fontSize: "12px" } },
-        formatDateTime(record.publish_at)
       ),
   },
   {
@@ -511,7 +523,7 @@ const fetchArticles = async () => {
     articles.value = (res.list || []).map((item) => ({
       ...item,
       mp_name: item.mp_name || item.account_name || "未知公众号",
-      publish_time: item.publish_time || item.create_time || "-",
+      publish_time: item.publish_time ?? item.create_time ?? "",
       url: item.url || "https://mp.weixin.qq.com/s/" + item.id,
     }));
     pagination.value.total = res.total || 0;
@@ -753,10 +765,20 @@ const handleBatchDelete = () => {
     cancelText: "取消",
     onOk: async () => {
       try {
-        await Promise.all(
-          selectedRowKeys.value.map((id) => deleteArticleApi(id))
-        );
-        Message.success(`成功删除${selectedRowKeys.value.length}篇文章`);
+        const selectedCount = selectedRowKeys.value.length;
+        const res = await deleteArticlesBatch(selectedRowKeys.value);
+        const deletedCount = (res as any)?.deleted_count ?? selectedCount;
+        const storageDeleted = (res as any)?.storage_deleted_count ?? 0;
+        const failedIds = (res as any)?.failed_ids || [];
+        if (failedIds.length > 0) {
+          Message.warning(
+            `批量删除完成：文章 ${deletedCount}/${selectedCount}，图片对象 ${storageDeleted}，失败 ${failedIds.length}`
+          );
+        } else {
+          Message.success(
+            `成功删除${deletedCount}篇文章，并清理${storageDeleted}个图片对象`
+          );
+        }
         selectedRowKeys.value = [];
         fetchArticles();
       } catch (error) {

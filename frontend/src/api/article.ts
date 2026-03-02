@@ -58,12 +58,18 @@ export const getArticles = (params: ArticleListParams) => {
   // 转换分页参数
   const page = params.page ?? 0
   const pageSize = params.pageSize ?? 10
-  const apiParams = {
+  const apiParams: Record<string, any> = {
     offset: page * pageSize,
     limit: pageSize,
-    search: params.search,
-    status: params.status,
-    mp_id: params.mp_id,
+  }
+  if (params.search !== undefined && String(params.search).trim() !== '') {
+    apiParams.search = params.search
+  }
+  if (params.status !== undefined && String(params.status).trim() !== '') {
+    apiParams.status = params.status
+  }
+  if (params.mp_id !== undefined && String(params.mp_id).trim() !== '') {
+    apiParams.mp_id = params.mp_id
   }
   return http.get<ArticleListResult>('/wx/articles', {
     params: apiParams,
@@ -113,6 +119,16 @@ export const getNextArticleDetail = (id: number) => {
  */
 export const deleteArticle = (id: number) => {
   return http.delete<{ code: number; message: string }>(`/wx/articles/${id}`)
+}
+
+/**
+ * 批量删除文章
+ * @param ids 文章ID列表
+ */
+export const deleteArticlesBatch = (ids: Array<number | string>) => {
+  return http.delete<{ code: number; message: string; data: any }>(`/wx/articles/batch`, {
+    data: { article_ids: ids },
+  })
 }
 
 /**

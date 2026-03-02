@@ -180,8 +180,13 @@ class ArticleRepository:
         return await self.client.delete(self.ARTICLE_TABLE, {"id": article_id})
 
     async def create_article(self, article_data: Dict):
-        """创建文章"""
-        return await self.client.insert(self.ARTICLE_TABLE, article_data)
+        """创建文章（按 id 幂等写入：存在则更新，不存在则插入）"""
+        rows = await self.client.upsert(
+            self.ARTICLE_TABLE,
+            article_data,
+            on_conflict="id",
+        )
+        return rows[0] if rows else {}
 
     async def update_article(self, article_id: str, article_data: Dict):
         """更新文章"""

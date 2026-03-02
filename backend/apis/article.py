@@ -1,12 +1,53 @@
-from fastapi import APIRouter, Depends, HTTPException, status as fast_status, Query
+from fastapi import APIRouter, Depends, HTTPException, status as fast_status, Query, Body
 from core.integrations.supabase.auth import get_current_user
 from core.articles import article_repo
 from core.feeds import feed_repo
+from core.integrations.supabase.storage import supabase_storage_articles
 from schemas import success_response, error_response, format_search_kw
 from core.common.log import logger
 from typing import Optional, List, Dict, Any, cast
+import re
 
 router = APIRouter(prefix=f"/articles", tags=["文章管理"])
+
+
+def _extract_storage_paths_from_content(content: str) -> List[str]:
+    """从文章 HTML 中提取 article-images 桶对象路径。"""
+    html = str(content or "")
+    if not html:
+        return []
+    bucket = supabase_storage_articles.bucket
+    public_prefix = f"/storage/v1/object/public/{bucket}/"
+    sign_prefix = f"/storage/v1/object/sign/{bucket}/"
+    paths: set[str] = set()
+
+    for src in re.findall(r"""(?:src|data-src)\s*=\s*["']([^"']+)["']""", html):
+        value = (src or "").strip()
+        if not value:
+            continue
+        if public_prefix in value:
+            paths.add(value.split(public_prefix, 1)[1].split("?", 1)[0])
+            continue
+        if sign_prefix in value:
+            paths.add(value.split(sign_prefix, 1)[1].split("?", 1)[0])
+            continue
+        # 兼容直接存对象路径的情况
+        if value.startswith("articles/"):
+            paths.add(value)
+    return [p for p in paths if p]
+
+
+async def _delete_article_storage_objects(article: Dict[str, Any]) -> int:
+    content = str(article.get("content") or "")
+    paths = _extract_storage_paths_from_content(content)
+    if not paths:
+        return 0
+    deleted = 0
+    for path in paths:
+        ok = await supabase_storage_articles.delete_object(path)
+        if ok:
+            deleted += 1
+    return deleted
 
 
 @router.get("", summary="获取文章列表")
@@ -249,23 +290,83 @@ async def clean_duplicate(_current_user: dict = Depends(get_current_user)):
         )
 
 
+@router.delete("/batch", summary="批量删除文章")
+async def delete_articles_batch(
+    article_ids: List[str] = Body(..., embed=True),
+    _current_user: dict = Depends(get_current_user),
+):
+    try:
+        ids = [str(i).strip() for i in (article_ids or []) if str(i).strip()]
+        if not ids:
+            raise HTTPException(
+                status_code=fast_status.HTTP_400_BAD_REQUEST,
+                detail=error_response(code=40001, message="article_ids 不能为空"),
+            )
+
+        rows_raw = await article_repo.get_articles_base(filters={"id": {"in": ids}})
+        rows: List[Dict[str, Any]] = cast(List[Dict[str, Any]], rows_raw)
+        rows_by_id = {str(r.get("id")): r for r in rows}
+
+        deleted_count = 0
+        storage_deleted_count = 0
+        missing_ids: List[str] = []
+        failed_ids: List[str] = []
+
+        for article_id in ids:
+            article = rows_by_id.get(article_id)
+            if not article:
+                missing_ids.append(article_id)
+                continue
+            try:
+                storage_deleted_count += await _delete_article_storage_objects(article)
+                await article_repo.delete_article(article_id)
+                deleted_count += 1
+            except Exception:
+                failed_ids.append(article_id)
+
+        return success_response(
+            {
+                "deleted_count": deleted_count,
+                "storage_deleted_count": storage_deleted_count,
+                "missing_ids": missing_ids,
+                "failed_ids": failed_ids,
+            },
+            message=f"批量删除完成，成功 {deleted_count} 篇",
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"批量删除文章失败: {str(e)}")
+        raise HTTPException(
+            status_code=fast_status.HTTP_406_NOT_ACCEPTABLE,
+            detail=error_response(code=50001, message=f"批量删除文章失败: {str(e)}"),
+        )
+
+
 @router.delete("/{article_id}", summary="删除文章")
 async def delete_article(
     article_id: str, _current_user: dict = Depends(get_current_user)
 ):
     try:
         # 检查文章是否存在
-        article = await article_repo.get_articles_by_id(article_id)
-        if not article:
+        article_rows = await article_repo.get_articles_by_id(article_id)
+        if not article_rows:
             raise HTTPException(
                 status_code=fast_status.HTTP_406_NOT_ACCEPTABLE,
                 detail=error_response(code=40401, message="文章不存在"),
             )
+        article = article_rows[0]
+
+        # 删除关联的 storage 图片对象（best-effort）
+        storage_deleted = await _delete_article_storage_objects(article)
 
         # 删除文章
         await article_repo.delete_article(article_id)
 
-        return success_response(None, message="文章已删除")
+        return success_response(
+            {"storage_deleted": storage_deleted},
+            message="文章已删除",
+        )
 
     except HTTPException as e:
         raise e

@@ -173,8 +173,10 @@ async def sync_wechat_account_articles(
         return success_response(
             {"time_span": time_span, "list": [], "total": 0, "mps": mp}
         )
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.info(f"更新公众号文章: {str(e)}", e)
+        logger.error(f"更新公众号文章异常: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=error_response(code=50001, message=f"更新公众号文章{str(e)}"),

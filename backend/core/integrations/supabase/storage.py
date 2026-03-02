@@ -103,6 +103,24 @@ class SupabaseStorage:
         # 非预期状态，按不存在处理，避免影响主流程
         return False
 
+    async def delete_object(self, path: str) -> bool:
+        """删除单个对象。对象不存在也视为成功。"""
+        if not path:
+            return True
+        url = f"{self.url}/storage/v1/object/{self.bucket}/{path}"
+        resp = await self._client.delete(url, headers=self._headers())
+        if resp.status_code in (200, 204, 404):
+            return True
+        # 自部署 Supabase 可能返回 400 + not found，按已删除处理
+        body = (resp.text or "").lower()
+        if resp.status_code == 400 and ("not found" in body or "no such object" in body):
+            return True
+        logger.warning(
+            f"[supabase-storage] delete failed bucket={self.bucket} path={path} "
+            f"status={resp.status_code} body={(resp.text or '')[:300]}"
+        )
+        return False
+
     async def upload_qr(self, data: bytes) -> dict[str, str]:
         path = self.path
         if "{uuid}" in path:

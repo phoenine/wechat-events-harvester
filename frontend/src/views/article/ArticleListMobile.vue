@@ -55,6 +55,9 @@
                       {{ item.description }}</a-typography-text
                     >
                     <a-typography-text type="secondary" strong>
+                      发布时间：{{ formatPublishTime(item) }}</a-typography-text
+                    >
+                    <a-typography-text type="secondary" strong>
                       {{ formatDateTime(item.created_at) }}</a-typography-text
                     >
                   </template>
@@ -203,6 +206,17 @@ const activeFeed = ref({
   name: "全部",
 });
 
+const formatPublishTime = (item: any) => {
+  const raw = item?.publish_time;
+  if (raw !== undefined && raw !== null && String(raw).trim() !== "") {
+    const ts = Number(raw);
+    if (!Number.isNaN(ts)) {
+      return formatTimestamp(ts);
+    }
+  }
+  return formatDateTime(item?.publish_at || item?.created_at);
+};
+
 const showMpList = () => {
   mpListVisible.value = true;
 };
@@ -236,6 +250,7 @@ const fetchArticles = async (isLoadMore = false) => {
         ...(res.list || []).map((item) => ({
           ...item,
           mp_name: item.mp_name || item.account_name || "未知公众号",
+          publish_time: item.publish_time ?? item.create_time ?? "",
           url: item.url || "https://mp.weixin.qq.com/s/" + item.id,
         })),
       ];
@@ -243,6 +258,7 @@ const fetchArticles = async (isLoadMore = false) => {
       articles.value = (res.list || []).map((item) => ({
         ...item,
         mp_name: item.mp_name || item.account_name || "未知公众号",
+        publish_time: item.publish_time ?? item.create_time ?? "",
         url: item.url || "https://mp.weixin.qq.com/s/" + item.id,
       }));
     }
