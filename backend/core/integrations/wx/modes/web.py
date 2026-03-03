@@ -124,6 +124,9 @@ class MpsWeb(WxGather):
                 break
 
             begin = i * count
+            page_candidates = 0
+            page_skip_existing = 0
+            page_processed = 0
 
             params = {
                 "sub": "list",
@@ -192,9 +195,18 @@ class MpsWeb(WxGather):
                         continue
 
                     appmsgex = (publish_info or {}).get("appmsgex") or []
+                    existing_ids = super().query_existing_article_ids(
+                        [str((it or {}).get("aid") or "") for it in appmsgex]
+                    )
                     for item in appmsgex:
                         try:
-                            aid = item.get("aid")
+                            aid = str(item.get("aid") or "").strip()
+                            if not aid:
+                                continue
+                            page_candidates += 1
+                            if aid in existing_ids:
+                                page_skip_existing += 1
+                                continue
 
                             if Gather_Content and aid and (not super().HasGathered(aid)):
                                 link = item.get("link") or ""
@@ -214,9 +226,15 @@ class MpsWeb(WxGather):
                                         "mp_id": Mps_id,
                                     },
                                 )
+                                page_processed += 1
                         except Exception:
                             continue
 
+                logger.info(
+                    f"[dedup-debug] mode=web mp_id={Mps_id} page={i} "
+                    f"candidates={page_candidates} skip_existing={page_skip_existing} "
+                    f"processed={page_processed} gather_content={Gather_Content}"
+                )
                 i += 1
 
             except requests.exceptions.Timeout:

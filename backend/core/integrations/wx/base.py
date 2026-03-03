@@ -91,6 +91,23 @@ class WxGather:
         self.aids.add(key)
         return False
 
+    def query_existing_article_ids(self, aids: list[str]) -> set[str]:
+        """批量查询数据库中已存在的文章 ID。"""
+        ids = sorted({str(aid).strip() for aid in (aids or []) if str(aid).strip()})
+        if not ids:
+            return set()
+        try:
+            from core.articles import article_repo
+
+            rows = article_repo.sync_get_articles(
+                filters={"id": {"in": ids}},
+                limit=len(ids),
+            )
+            return {str((row or {}).get("id")) for row in (rows or []) if (row or {}).get("id")}
+        except Exception as e:
+            logger.warning(f"查询已存在文章失败，回退为不跳过: {e}")
+            return set()
+
     def _derive_mp_token_from_cookies(
         self, cookies: str, headers: dict | None = None
     ) -> str:

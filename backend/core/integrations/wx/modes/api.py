@@ -138,6 +138,9 @@ class MpsApi(WxGather):
         # 遍历分页
         while i < int(MaxPage or 0):
             begin = i * count
+            page_candidates = 0
+            page_skip_existing = 0
+            page_processed = 0
 
             # 随机 sleep 降频，减少触发频控概率
             try:
@@ -195,6 +198,9 @@ class MpsApi(WxGather):
                 # 没有更多数据：正常退出
                 break
 
+            existing_ids = self.query_existing_article_ids(
+                [str((it or {}).get("aid") or "") for it in items]
+            )
             try:
                 for item in items:
                     try:
@@ -202,8 +208,14 @@ class MpsApi(WxGather):
                         item["mp_id"] = Mps_id
 
                         # 去重：防止同一文章重复采集/回调（aid/链接有时可能重复）
-                        aid = item.get("aid")
-                        if aid and self.HasGathered(str(aid)):
+                        aid = str(item.get("aid") or "").strip()
+                        if not aid:
+                            continue
+                        page_candidates += 1
+                        if aid in existing_ids:
+                            page_skip_existing += 1
+                            continue
+                        if self.HasGathered(aid):
                             continue
 
                         # 可选：抓取正文
@@ -218,6 +230,7 @@ class MpsApi(WxGather):
                             data=item,
                             Ext_Data={"mp_title": Mps_title},
                         )
+                        page_processed += 1
                     except Exception:
                         # 单条失败不影响整体分页（best-effort）
                         continue
@@ -225,6 +238,11 @@ class MpsApi(WxGather):
                 # 每轮结束回调：用于上层做进度/落库/清理
                 super().Item_Over(item=i, CallBack=Item_Over_CallBack)
 
+            logger.info(
+                f"[dedup-debug] mode=api mp_id={Mps_id} page={i} "
+                f"candidates={page_candidates} skip_existing={page_skip_existing} "
+                f"processed={page_processed} gather_content={Gather_Content}"
+            )
             i += 1
 
         # 全部结束回调

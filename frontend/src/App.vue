@@ -97,7 +97,7 @@
 
 <script setup lang="ts">
 import translate from 'i18n-jsautotranslate'
-import { ref,watchEffect, computed, onMounted, watch, provide } from 'vue'
+import { ref,watchEffect, computed, onMounted, onBeforeUnmount, watch, provide } from 'vue'
 import { Modal } from '@arco-design/web-vue/es/modal'
 import {getSysInfo} from '@/api/sysInfo'
 const currentLanguage = ref(localStorage.getItem('language') || 'chinese_simplified');
@@ -125,6 +125,10 @@ const showAuthQrcode = () => {
   qrcodeRef.value?.startAuth()
 }
 provide('showAuthQrcode', showAuthQrcode)
+const onWxAuthRequired = () => {
+  Message.warning('检测到授权异常，请重新扫码授权')
+  showAuthQrcode()
+}
 const appTitle = computed(() => import.meta.env.VITE_APP_TITLE || '微信活动订阅助手')
 const logo = ref("/logo.svg")
 const router = useRouter()
@@ -206,11 +210,16 @@ const handleLogout = async () => {
 }
 
 onMounted(() => {
+  window.addEventListener('wx-auth-required', onWxAuthRequired as EventListener)
   if (isAuthenticated.value) {
     fetchUserInfo()
     fetchSysInfo()
   }
   translatePage();
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('wx-auth-required', onWxAuthRequired as EventListener)
 })
 import { translatePage, setCurrentLanguage } from '@/utils/translate';
 

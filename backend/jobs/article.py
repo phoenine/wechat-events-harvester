@@ -77,11 +77,16 @@ def _upload_article_images(article: dict) -> tuple[dict, list[dict]]:
     article_id = str(article.get("id") or str(uuid.uuid4()))
     article_name = _sanitize_slug(str(article.get("title") or article_id))
     mappings: list[dict] = []
+    stat_total = 0
+    stat_reuse_public_url = 0
+    stat_reuse_existing_object = 0
+    stat_uploaded = 0
 
     for i, img in enumerate(images, start=1):
         src = (img.get("src") or img.get("data-src") or "").strip()
         if not src or src.startswith("data:"):
             continue
+        stat_total += 1
         try:
             # 已经是目标存储链接则跳过
             if f"/storage/v1/object/public/{supabase_storage_articles.bucket}/" in src:
@@ -98,6 +103,7 @@ def _upload_article_images(article: dict) -> tuple[dict, list[dict]]:
                             "position": i,
                         }
                     )
+                    stat_reuse_public_url += 1
                 continue
 
             filename = _guess_filename(src, "", i)
@@ -111,7 +117,8 @@ def _upload_article_images(article: dict) -> tuple[dict, list[dict]]:
                 },
             )
             # 目标已存在则直接复用，避免重复下载和上传
-            if not run_sync(supabase_storage_articles.exists(path)):
+            exists = run_sync(supabase_storage_articles.exists(path))
+            if not exists:
                 resp = requests.get(src, timeout=15)
                 resp.raise_for_status()
                 ctype = (resp.headers.get("Content-Type") or "image/jpeg").split(";")[0]
@@ -122,6 +129,9 @@ def _upload_article_images(article: dict) -> tuple[dict, list[dict]]:
                         content_type=ctype,
                     )
                 )
+                stat_uploaded += 1
+            else:
+                stat_reuse_existing_object += 1
             public_url = supabase_storage_articles.public_url(path)
             img["src"] = public_url
             if "data-src" in img.attrs:
@@ -137,6 +147,13 @@ def _upload_article_images(article: dict) -> tuple[dict, list[dict]]:
             )
         except Exception as e:
             logger.warning(f"文章图片上传失败，保留原链接: {e}")
+
+    if stat_total > 0:
+        logger.info(
+            f"[dedup-debug] article_id={article_id} image_total={stat_total} "
+            f"reuse_public={stat_reuse_public_url} reuse_existing_object={stat_reuse_existing_object} "
+            f"uploaded={stat_uploaded}"
+        )
 
     article["content"] = str(soup)
     return article, mappings
