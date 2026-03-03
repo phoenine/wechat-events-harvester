@@ -7,10 +7,10 @@ export interface ListConfigsParams {
 }
 
 export const listConfigs = (params?: ListConfigsParams) => {
-  const page = params?.page ?? 0
+  const page = params?.page ?? 1
   const pageSize = params?.pageSize ?? 10
   const apiParams = {
-    offset: page * pageSize,
+    offset: Math.max(0, page - 1) * pageSize,
     limit: pageSize,
   }
   return http.get<ConfigManagement>('/wx/configs', { params: apiParams })

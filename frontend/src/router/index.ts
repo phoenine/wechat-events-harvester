@@ -1,6 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import BasicLayout from '../components/Layout/BasicLayout.vue'
-import ExportRecords from '../views/ExportRecords.vue'
 import Login from '../views/Login.vue'
 import ArticleList from '../views/ArticleList.vue'
 import ChangePassword from '../views/ChangePassword.vue'
@@ -62,15 +61,6 @@ const routes = [
         },
       },
       {
-        path: 'export/records',
-        name: 'ExportList',
-        component: ExportRecords,
-        meta: {
-          requiresAuth: true,
-          permissions: ['config:view'],
-        },
-      },
-      {
         path: 'configs/:key',
         name: 'ConfigDetail',
         component: ConfigDetail,
@@ -87,6 +77,14 @@ const routes = [
         meta: {
           requiresAuth: true,
           permissions: ['message_task:view'],
+        },
+      },
+      {
+        path: 'notification',
+        name: 'ActivityManagement',
+        component: () => import('@/views/ActivityManagement.vue'),
+        meta: {
+          requiresAuth: true,
         },
       },
       {

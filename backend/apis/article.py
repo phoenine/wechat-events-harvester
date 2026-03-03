@@ -7,6 +7,7 @@ from schemas import success_response, error_response, format_search_kw
 from core.common.log import logger
 from typing import Optional, List, Dict, Any, cast
 import re
+from datetime import datetime, timedelta, timezone
 
 router = APIRouter(prefix=f"/articles", tags=["文章管理"])
 
@@ -223,9 +224,23 @@ async def get_prev_article(
 @router.delete("/clean_expired", summary="清理过期文章(删除15天前的publish_time)")
 async def clean_expired_articles(_current_user: dict = Depends(get_current_user)):
     try:
-        deleted_count = await article_repo.clean_expired_articles()
+        cutoff_ts = int((datetime.now(timezone.utc) - timedelta(days=15)).timestamp())
+        expired_rows_raw = await article_repo.get_articles_base(
+            filters={"publish_time": {"lt": cutoff_ts}}
+        )
+        expired_rows: List[Dict[str, Any]] = cast(List[Dict[str, Any]], expired_rows_raw)
+
+        storage_deleted_count = 0
+        for article in expired_rows:
+            storage_deleted_count += await _delete_article_storage_objects(article)
+
+        deleted_count = await article_repo.clean_expired_articles(days=15)
         return success_response(
-            {"message": "清理过期文章成功", "deleted_count": deleted_count}
+            {
+                "message": "清理过期文章成功",
+                "deleted_count": deleted_count,
+                "storage_deleted_count": storage_deleted_count,
+            }
         )
     except Exception as e:
         logger.error(f"清理过期文章错误: {str(e)}")

@@ -121,14 +121,6 @@
           <!-- #extra：保持默认横排，不做换行增强 -->
           <template #extra>
             <a-space>
-              <!-- 导出 -->
-              <a-space-item>
-                <a-button @click="handleExportShow()">
-                  <template #icon><icon-export /></template>
-                  导出
-                </a-button>
-              </a-space-item>
-
               <!-- 互斥：选中具体公众号 -> 显示“刷新”；否则 -> 显示“清理”下拉（合并三项） -->
               <a-space-item v-if="!!activeMpId">
                 <a-button @click="refresh">
@@ -158,60 +150,6 @@
               </a-space-item>
 
               <a-space-item>
-                <a-dropdown>
-                  <a-button>
-                    <template #icon>
-                      <IconWifi />
-                    </template>
-                    订阅
-                    <icon-down />
-                  </a-button>
-                  <template #content>
-                    <a-doption
-                      @click="
-                        rssFormat = 'atom';
-                        openRssFeed();
-                      "
-                      ><template #icon> <TextIcon text="atom" /> </template
-                      >ATOM</a-doption
-                    >
-                    <a-doption
-                      @click="
-                        rssFormat = 'rss';
-                        openRssFeed();
-                      "
-                      ><template #icon> <TextIcon text="rss" /> </template
-                      >RSS</a-doption
-                    >
-                    <a-doption
-                      @click="
-                        rssFormat = 'json';
-                        openRssFeed();
-                      "
-                      ><template #icon> <TextIcon text="json" /> </template
-                      >JSON</a-doption
-                    >
-                    <a-doption
-                      @click="
-                        rssFormat = 'md';
-                        openRssFeed();
-                      "
-                      ><template #icon> <TextIcon text="md" /> </template
-                      >Markdown</a-doption
-                    >
-                    <a-doption
-                      @click="
-                        rssFormat = 'txt';
-                        openRssFeed();
-                      "
-                      ><template #icon> <TextIcon text="txt" /> </template
-                      >Text</a-doption
-                    >
-                  </template>
-                </a-dropdown>
-              </a-space-item>
-
-              <a-space-item>
                 <a-button
                   type="primary"
                   status="danger"
@@ -225,9 +163,6 @@
             </a-space>
           </template>
         </a-page-header>
-
-        <!-- 弹窗组件放在 PageHeader 外，避免在 space 中产生空位 -->
-        <ExportModal ref="exportModal" />
 
         <a-card style="border: 0">
           <a-alert type="success" closable>{{
@@ -360,7 +295,6 @@ import {
   IconRefresh,
   IconScan,
   IconWeiboCircleFill,
-  IconWifi,
   IconCode,
 } from "@arco-design/web-vue/es/icon";
 import {
@@ -373,19 +307,16 @@ import {
   ClearExpiredArticle,
 } from "@/api/article";
 import { ExportOPML, ExportMPS, ImportMPS } from "@/api/export";
-import ExportModal from "@/components/ExportModal.vue";
 import { getSubscriptions, UpdateMps, deleteMpApi } from "@/api/subscription";
 import { Message, Modal } from "@arco-design/web-vue";
 import { formatDateTime, formatTimestamp } from "@/utils/date";
 import router from "@/router";
-import TextIcon from "@/components/TextIcon.vue";
 
 const articles = ref([]);
 const loading = ref(false);
 const mpList = ref([]);
 const mpLoading = ref(false);
 const activeMpId = ref("");
-const exportModal = ref();
 const selectedRowKeys = ref([]);
 const mpPagination = ref({
   current: 1,
@@ -499,7 +430,6 @@ const handleMpPageChange = (page: number, pageSize: number) => {
   fetchMpList();
 };
 
-const rssFormat = ref("atom");
 const activeFeed = ref({ id: "", name: "全部" });
 
 const handleMpClick = (mpId: string) => {
@@ -603,24 +533,6 @@ const importMPS = async () => {
   }
 };
 
-const openRssFeed = () => {
-  const format = ["rss", "atom", "json", "md", "txt"].includes(rssFormat.value)
-    ? rssFormat.value
-    : "atom";
-  let search = "";
-  if (searchText.value != "") {
-    search = "/search/" + searchText.value;
-  }
-  if (!activeMpId.value) {
-    window.open(`/feed${search}/all.${format}`, "_blank");
-    return;
-  }
-  const activeMp = mpList.value.find((item) => item.id === activeMpId.value);
-  if (activeMp) {
-    window.open(`/feed${search}/${activeMpId.value}.${format}`, "_blank");
-  }
-};
-
 const resetScrollPosition = () => {
   window.scrollTo({ top: 0, behavior: "smooth" });
 };
@@ -688,7 +600,11 @@ const clear_expired_articles = () => {
       fullLoading.value = true;
       try {
         const res = await ClearExpiredArticle();
-        Message.success((res as any)?.message || "清理成功");
+        const deletedCount = (res as any)?.deleted_count ?? 0;
+        const storageDeleted = (res as any)?.storage_deleted_count ?? 0;
+        Message.success(
+          `清理成功：删除 ${deletedCount} 篇过期文章，清理 ${storageDeleted} 个图片对象`
+        );
         fetchArticles();
       } catch (error) {
         Message.error("清理过期文章失败，请稍后重试");
@@ -861,7 +777,11 @@ const deleteMp = async (mpId: string) => {
       onOk: async () => {
         await deleteMpApi(mpId);
         Message.success("订阅号删除成功");
-        fetchMpList();
+        activeMpId.value = "";
+        activeFeed.value = { id: "", name: "全部" };
+        pagination.value.current = 1;
+        await fetchMpList();
+        await fetchArticles();
       },
       onCancel: () => {
         Message.info("已取消删除操作");
@@ -873,46 +793,6 @@ const deleteMp = async (mpId: string) => {
   }
 };
 
-const importArticles = () => {
-  const input = document.createElement("input");
-  input.type = "file";
-  input.accept = ".json";
-  input.onchange = async (e) => {
-    const file = (e.target as HTMLInputElement).files?.[0];
-    if (!file) return;
-
-    try {
-      const content = await file.text();
-      const data = JSON.parse(content);
-      Message.success(`成功导入${data.length}篇文章`);
-    } catch (error) {
-      console.error("导入文章失败:", error);
-      Message.error("导入失败，请检查文件格式");
-    }
-  };
-  input.click();
-};
-
-const exportArticles = () => {
-  if (!articles.value.length) {
-    Message.warning("没有文章可导出");
-    return;
-  }
-
-  const data = JSON.stringify(articles.value, null, 2);
-  const blob = new Blob([data], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `articles_${activeMpId.value || "all"}_${new Date()
-    .toISOString()
-    .slice(0, 10)}.json`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
-  Message.success("导出成功");
-};
 </script>
 
 <style scoped>
