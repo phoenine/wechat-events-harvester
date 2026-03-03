@@ -6,6 +6,7 @@ from core.common.utils.async_tools import run_sync
 class ArticleRepository:
 
     ARTICLE_TABLE = "articles"
+    ARTICLE_IMAGE_TABLE = "article_images"
 
     def __init__(self, client: Any):
         self.client = client
@@ -178,6 +179,54 @@ class ArticleRepository:
         """删除文章"""
         return await self.client.delete(self.ARTICLE_TABLE, {"id": article_id})
 
+    async def get_article_images(self, article_id: str):
+        """获取文章关联图片映射。"""
+        return await self.client.select(
+            self.ARTICLE_IMAGE_TABLE,
+            filters={"article_id": article_id},
+            order="position.asc,created_at.asc",
+        )
+
+    async def delete_article_images_by_article(self, article_id: str):
+        """删除文章关联图片映射。"""
+        return await self.client.delete(
+            self.ARTICLE_IMAGE_TABLE, {"article_id": article_id}
+        )
+
+    async def delete_article_images_by_articles(self, article_ids: List[str]):
+        """批量删除多篇文章图片映射。"""
+        if not article_ids:
+            return []
+        return await self.client.delete(
+            self.ARTICLE_IMAGE_TABLE, {"article_id": {"in": article_ids}}
+        )
+
+    async def replace_article_images(self, article_id: str, images: List[Dict[str, Any]]):
+        """按文章替换图片映射（先删后插，确保与最新正文一致）。"""
+        await self.delete_article_images_by_article(article_id)
+        rows: List[Dict[str, Any]] = []
+        for idx, img in enumerate(images, start=1):
+            object_path = str(img.get("object_path") or "").strip()
+            if not object_path:
+                continue
+            rows.append(
+                {
+                    "article_id": article_id,
+                    "bucket": img.get("bucket") or "article-images",
+                    "object_path": object_path,
+                    "public_url": img.get("public_url") or "",
+                    "origin_url": img.get("origin_url") or "",
+                    "position": img.get("position") or idx,
+                }
+            )
+        if not rows:
+            return []
+        return await self.client.upsert(
+            self.ARTICLE_IMAGE_TABLE,
+            rows,
+            on_conflict="article_id,object_path",
+        )
+
     async def create_article(self, article_data: Dict):
         """创建文章（按 id 幂等写入：存在则更新，不存在则插入）"""
         rows = await self.client.upsert(
@@ -225,3 +274,7 @@ class ArticleRepository:
     def sync_delete_article(self, article_id: str):
         """同步删除文章（用于兼容同步代码）"""
         return run_sync(self.delete_article(article_id))
+
+    def sync_replace_article_images(self, article_id: str, images: List[Dict[str, Any]]):
+        """同步替换文章图片映射（用于兼容同步代码）。"""
+        return run_sync(self.replace_article_images(article_id, images))

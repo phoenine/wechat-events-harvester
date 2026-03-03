@@ -199,10 +199,24 @@ const handleSearch = () => {
   fetchArticles()
 }
 const processedContent = (record: any) => {
-  return record.content.replace(
-    /(<img[^>]*src=["'])(?!\/static\/res\/logo\/)([^"']*)/g,
-    '$1/static/res/logo/$2'
-  ).replace(/<img([^>]*)width=["'][^"']*["']([^>]*)>/g, '<img$1$2>')
+  const html = String(record?.content || '')
+  return html
+    .replace(
+      /(<img[^>]*\ssrc=["'])https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?(\/storage\/v1\/object\/public\/[^"']+)(["'][^>]*>)/gi,
+      '$1$2$3'
+    )
+    .replace(
+      /<img([^>]*?)\sdata-src=["']([^"']+)["']([^>]*)>/gi,
+      (match, before, dataSrc, after) => {
+        if (/(?:\s|^)src\s*=/.test(match)) return match
+        return `<img${before} src="${dataSrc}"${after}>`
+      }
+    )
+    .replace(
+      /(<img[^>]*\ssrc=["'])\/\/([^"']+)(["'][^>]*>)/gi,
+      '$1https://$2$3'
+    )
+    .replace(/<img([^>]*)width=["'][^"']*["']([^>]*)>/gi, '<img$1$2>')
 }
 const viewArticle = async (record: any) => {
   loading.value = true

@@ -25,6 +25,22 @@ ARTICLE_COLUMNS = {
 }
 
 
+def _extract_object_path_from_storage_url(url: str) -> str:
+    value = str(url or "").strip()
+    if not value:
+        return ""
+    bucket = supabase_storage_articles.bucket
+    public_prefix = f"/storage/v1/object/public/{bucket}/"
+    sign_prefix = f"/storage/v1/object/sign/{bucket}/"
+    if public_prefix in value:
+        return value.split(public_prefix, 1)[1].split("?", 1)[0]
+    if sign_prefix in value:
+        return value.split(sign_prefix, 1)[1].split("?", 1)[0]
+    if value.startswith("articles/"):
+        return value.split("?", 1)[0]
+    return ""
+
+
 def _sanitize_slug(value: str, default: str = "article") -> str:
     text = (value or "").strip().lower()
     text = re.sub(r"[^a-z0-9._-]+", "-", text).strip("-")
@@ -48,18 +64,19 @@ def _format_storage_path(template: str, values: dict[str, str]) -> str:
     return re.sub(r"\{([a-zA-Z0-9_]+)\}", replace, template)
 
 
-def _upload_article_images(article: dict) -> dict:
+def _upload_article_images(article: dict) -> tuple[dict, list[dict]]:
     content = str(article.get("content") or "")
     if not content or not supabase_storage_articles.valid():
-        return article
+        return article, []
 
     soup = BeautifulSoup(content, "html.parser")
     images = soup.find_all("img")
     if not images:
-        return article
+        return article, []
 
     article_id = str(article.get("id") or str(uuid.uuid4()))
     article_name = _sanitize_slug(str(article.get("title") or article_id))
+    mappings: list[dict] = []
 
     for i, img in enumerate(images, start=1):
         src = (img.get("src") or img.get("data-src") or "").strip()
@@ -68,6 +85,19 @@ def _upload_article_images(article: dict) -> dict:
         try:
             # 已经是目标存储链接则跳过
             if f"/storage/v1/object/public/{supabase_storage_articles.bucket}/" in src:
+                existing_path = _extract_object_path_from_storage_url(src)
+                if existing_path:
+                    mappings.append(
+                        {
+                            "bucket": supabase_storage_articles.bucket,
+                            "object_path": existing_path,
+                            "public_url": supabase_storage_articles.public_url(
+                                existing_path
+                            ),
+                            "origin_url": src,
+                            "position": i,
+                        }
+                    )
                 continue
 
             filename = _guess_filename(src, "", i)
@@ -92,14 +122,24 @@ def _upload_article_images(article: dict) -> dict:
                         content_type=ctype,
                     )
                 )
-            img["src"] = supabase_storage_articles.public_url(path)
+            public_url = supabase_storage_articles.public_url(path)
+            img["src"] = public_url
             if "data-src" in img.attrs:
                 del img.attrs["data-src"]
+            mappings.append(
+                {
+                    "bucket": supabase_storage_articles.bucket,
+                    "object_path": path,
+                    "public_url": public_url,
+                    "origin_url": src,
+                    "position": i,
+                }
+            )
         except Exception as e:
             logger.warning(f"文章图片上传失败，保留原链接: {e}")
 
     article["content"] = str(soup)
-    return article
+    return article, mappings
 
 
 def _normalize_article_for_db(article: dict) -> dict:
@@ -140,12 +180,18 @@ def UpdateArticle(art: dict, check_exist: bool = False):
     if settings.debug:
         pass
     try:
-        art = _upload_article_images(dict(art))
+        art, image_mappings = _upload_article_images(dict(art))
         art = _ensure_content_markdown(art)
         art = _normalize_article_for_db(art)
         # 使用 Supabase 创建文章
         result = article_repo.sync_create_article(art)
         if result:
+            article_id = str(result.get("id") or art.get("id") or "")
+            if article_id:
+                try:
+                    article_repo.sync_replace_article_images(article_id, image_mappings)
+                except Exception as e:
+                    logger.warning(f"写入 article_images 映射失败 article_id={article_id}: {e}")
             mps_count = mps_count + 1
             return True
     except Exception as e:

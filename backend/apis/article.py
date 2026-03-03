@@ -39,8 +39,27 @@ def _extract_storage_paths_from_content(content: str) -> List[str]:
 
 
 async def _delete_article_storage_objects(article: Dict[str, Any]) -> int:
-    content = str(article.get("content") or "")
-    paths = _extract_storage_paths_from_content(content)
+    article_id = str(article.get("id") or "")
+    paths: set[str] = set()
+
+    # 优先使用映射表，避免依赖 HTML 解析。
+    if article_id:
+        try:
+            mapped_rows_raw = await article_repo.get_article_images(article_id)
+            mapped_rows: List[Dict[str, Any]] = cast(List[Dict[str, Any]], mapped_rows_raw)
+            for row in mapped_rows:
+                path = str(row.get("object_path") or "").strip()
+                if path:
+                    paths.add(path)
+        except Exception:
+            pass
+
+    # 兼容历史数据：映射不存在时从正文提取。
+    if not paths:
+        content = str(article.get("content") or "")
+        for p in _extract_storage_paths_from_content(content):
+            paths.add(p)
+
     if not paths:
         return 0
     deleted = 0
@@ -49,6 +68,25 @@ async def _delete_article_storage_objects(article: Dict[str, Any]) -> int:
         if ok:
             deleted += 1
     return deleted
+
+
+async def _safe_delete_article_image_mapping(article_id: str) -> None:
+    if not article_id:
+        return
+    try:
+        await article_repo.delete_article_images_by_article(article_id)
+    except Exception as e:
+        logger.warning(f"删除文章图片映射失败 article_id={article_id}: {e}")
+
+
+async def _safe_delete_article_image_mappings(article_ids: List[str]) -> None:
+    ids = [str(i).strip() for i in (article_ids or []) if str(i).strip()]
+    if not ids:
+        return
+    try:
+        await article_repo.delete_article_images_by_articles(ids)
+    except Exception as e:
+        logger.warning(f"批量删除文章图片映射失败 count={len(ids)}: {e}")
 
 
 @router.get("", summary="获取文章列表")
@@ -108,15 +146,14 @@ async def get_article_detail(
     _current_user: dict = Depends(get_current_user),
 ):
     try:
-        article = await article_repo.get_articles_by_id(article_id)
-
-        if not article:
+        article_rows_raw = await article_repo.get_articles_by_id(article_id)
+        article_rows: List[Dict[str, Any]] = cast(List[Dict[str, Any]], article_rows_raw)
+        if not article_rows:
             raise HTTPException(
                 status_code=fast_status.HTTP_404_NOT_FOUND,
                 detail=error_response(code=40401, message="文章不存在"),
             )
-
-        return success_response(article)
+        return success_response(article_rows[0])
 
     except HTTPException as e:
         raise e
@@ -134,13 +171,16 @@ async def get_next_article(
 ):
     try:
         # 获取当前文章
-        current_article_raw = await article_repo.get_articles_by_id(article_id)
-        current_article: Dict[str, Any] = cast(Dict[str, Any], current_article_raw)
-        if not current_article:
+        current_article_rows_raw = await article_repo.get_articles_by_id(article_id)
+        current_article_rows: List[Dict[str, Any]] = cast(
+            List[Dict[str, Any]], current_article_rows_raw
+        )
+        if not current_article_rows:
             raise HTTPException(
                 status_code=fast_status.HTTP_404_NOT_FOUND,
                 detail=error_response(code=40401, message="当前文章不存在"),
             )
+        current_article = current_article_rows[0]
         # 获取同一公众号的文章
         articles_raw = await article_repo.get_articles(
             mp_id=current_article["mp_id"], order_by="publish_time.desc"
@@ -180,13 +220,16 @@ async def get_prev_article(
 ):
     try:
         # 获取当前文章
-        current_article_raw = await article_repo.get_articles_by_id(article_id)
-        current_article: Dict[str, Any] = cast(Dict[str, Any], current_article_raw)
-        if not current_article:
+        current_article_rows_raw = await article_repo.get_articles_by_id(article_id)
+        current_article_rows: List[Dict[str, Any]] = cast(
+            List[Dict[str, Any]], current_article_rows_raw
+        )
+        if not current_article_rows:
             raise HTTPException(
                 status_code=fast_status.HTTP_404_NOT_FOUND,
                 detail=error_response(code=40401, message="当前文章不存在"),
             )
+        current_article = current_article_rows[0]
 
         # 获取同一公众号的文章
         articles_raw = await article_repo.get_articles(
@@ -229,12 +272,14 @@ async def clean_expired_articles(_current_user: dict = Depends(get_current_user)
             filters={"publish_time": {"lt": cutoff_ts}}
         )
         expired_rows: List[Dict[str, Any]] = cast(List[Dict[str, Any]], expired_rows_raw)
+        article_ids = [str(row.get("id")) for row in expired_rows if row.get("id")]
 
         storage_deleted_count = 0
         for article in expired_rows:
             storage_deleted_count += await _delete_article_storage_objects(article)
 
         deleted_count = await article_repo.clean_expired_articles(days=15)
+        await _safe_delete_article_image_mappings(article_ids)
         return success_response(
             {
                 "message": "清理过期文章成功",
@@ -263,13 +308,20 @@ async def clean_orphan_articles(_current_user: dict = Depends(get_current_user))
         articles: List[Dict[str, Any]] = cast(List[Dict[str, Any]], articles_raw)
 
         deleted_count = 0
+        storage_deleted_count = 0
         for article in articles:
             if article["mp_id"] not in valid_feed_ids:
+                storage_deleted_count += await _delete_article_storage_objects(article)
                 await article_repo.delete_article(article["id"])
+                await _safe_delete_article_image_mapping(str(article["id"]))
                 deleted_count += 1
 
         return success_response(
-            {"message": "清理无效文章成功", "deleted_count": deleted_count}
+            {
+                "message": "清理无效文章成功",
+                "deleted_count": deleted_count,
+                "storage_deleted_count": storage_deleted_count,
+            }
         )
     except Exception as e:
         logger.error(f"清理无效文章错误: {str(e)}")
@@ -324,6 +376,7 @@ async def delete_articles_batch(
             try:
                 storage_deleted_count += await _delete_article_storage_objects(article)
                 await article_repo.delete_article(article_id)
+                await _safe_delete_article_image_mapping(article_id)
                 deleted_count += 1
             except Exception:
                 failed_ids.append(article_id)
@@ -366,6 +419,7 @@ async def delete_article(
 
         # 删除文章
         await article_repo.delete_article(article_id)
+        await _safe_delete_article_image_mapping(article_id)
 
         return success_response(
             {"storage_deleted": storage_deleted},

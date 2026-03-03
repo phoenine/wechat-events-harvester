@@ -23,6 +23,10 @@ export default defineConfig(({ command, mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   const devProxyTarget =
     command === "serve" ? getDevProxyTarget(env.DEV_PROXY_TARGET) : "http://localhost:38001";
+  const devStorageProxyTarget =
+    command === "serve"
+      ? (env.DEV_STORAGE_PROXY_TARGET || "http://localhost:8000").trim()
+      : "http://localhost:8000";
 
   return {
     plugins: [vue()],
@@ -68,6 +72,10 @@ export default defineConfig(({ command, mode }) => {
         },
         "/api": {
           target: devProxyTarget,
+          changeOrigin: true,
+        },
+        "/storage": {
+          target: devStorageProxyTarget,
           changeOrigin: true,
         },
       },
