@@ -367,7 +367,7 @@ const columns = [
   {
     title: "文章标题",
     dataIndex: "title",
-    width: window.innerWidth - 1000,
+    width: window.innerWidth - 1020,
     ellipsis: true,
     render: ({ record }) =>
       h(
@@ -398,7 +398,7 @@ const columns = [
   {
     title: "发布时间",
     dataIndex: "publish_at",
-    width: "140",
+    width: "160",
     render: ({ record }) =>
       h(
         "span",
@@ -409,7 +409,7 @@ const columns = [
   {
     title: "更新时间",
     dataIndex: "created_at",
-    width: "140",
+    width: "160",
     render: ({ record }) =>
       h(
         "span",
