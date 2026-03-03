@@ -119,7 +119,7 @@ POSTGRES_DB=postgres
 ```bash
 APP_NAME=we-mp-rss
 SERVER_NAME=we-mp-rss
-WEB_NAME=WeRSS微信公众号订阅助手
+WEB_NAME=WeRSS微信活动订阅助手
 SECRET_KEY_BASE=your-secret-key
 USERNAME=admin
 PASSWORD=admin@123

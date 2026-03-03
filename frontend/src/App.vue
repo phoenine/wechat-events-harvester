@@ -236,7 +236,7 @@ const showAuthQrcode = () => {
   qrcodeRef.value?.startAuth()
 }
 provide('showAuthQrcode', showAuthQrcode)
-const appTitle = computed(() => import.meta.env.VITE_APP_TITLE || '微信公众号订阅助手')
+const appTitle = computed(() => import.meta.env.VITE_APP_TITLE || '微信活动订阅助手')
 const logo = ref("/logo.svg")
 const router = useRouter()
 const route = useRoute()

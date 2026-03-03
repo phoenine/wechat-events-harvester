@@ -1,4 +1,4 @@
-# 微信公众号订阅助手 - WebUI
+# 微信活动订阅助手 - WebUI
 
 基于Vue3 + Vite + ArcoDesign构建的前端界面
 
@@ -36,7 +36,7 @@ npm install --save-dev less less-loader
 创建`frontend/.env.development`文件：
 ```ini
 DEV_PROXY_TARGET=http://localhost:38001
-VITE_APP_TITLE=微信公众号订阅助手
+VITE_APP_TITLE=微信活动订阅助手
 VITE_DEBUG_MODE=false
 ```
 

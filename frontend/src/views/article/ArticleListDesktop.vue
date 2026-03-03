@@ -24,31 +24,10 @@
           }"
         >
           <template #extra>
-            <a-dropdown>
-              <a-button type="primary">
-                <template #icon><icon-plus /></template>
-                订阅
-                <icon-down />
-              </a-button>
-              <template #content>
-                <a-doption @click="showAddModal">
-                  <template #icon><icon-plus /></template>
-                  添加公众号
-                </a-doption>
-                <a-doption @click="exportMPS">
-                  <template #icon><icon-export /></template>
-                  导出公众号
-                </a-doption>
-                <a-doption @click="importMPS">
-                  <template #icon><icon-import /></template>
-                  导入公众号
-                </a-doption>
-                <a-doption @click="exportOPML">
-                  <template #icon><icon-share-external /></template>
-                  导出OPML
-                </a-doption>
-              </template>
-            </a-dropdown>
+            <a-button type="primary" @click="showAddModal">
+              <template #icon><icon-plus /></template>
+              添加公众号
+            </a-button>
           </template>
 
           <div style="display: flex; flex-direction: column; background: #fff">
@@ -306,7 +285,6 @@ import {
   getArticleDetail,
   ClearExpiredArticle,
 } from "@/api/article";
-import { ExportOPML, ExportMPS, ImportMPS } from "@/api/export";
 import { getSubscriptions, UpdateMps, deleteMpApi } from "@/api/subscription";
 import { Message, Modal } from "@arco-design/web-vue";
 import { formatDateTime, formatTimestamp } from "@/utils/date";
@@ -474,63 +452,6 @@ const handlePageChange = (page: number, pageSize: number) => {
 const handleSearch = () => {
   pagination.value.current = 1;
   fetchArticles();
-};
-
-const exportOPML = async () => {
-  try {
-    const response = await ExportOPML();
-    const blob = new Blob([response], { type: "application/xml" });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "rss_feed.opml";
-    document.body.appendChild(a);
-    a.click();
-    window.URL.revokeObjectURL(url);
-    document.body.removeChild(a);
-  } catch (error) {
-    Message.error((error as any)?.message || "导出OPML失败");
-  }
-};
-
-const exportMPS = async () => {
-  try {
-    const res = await ExportMPS();
-    const data = (res as any).data ?? res;
-    const blob =
-      data instanceof Blob
-        ? data
-        : new Blob([data], { type: "text/csv;charset=utf-8" });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "公众号列表.csv";
-    document.body.appendChild(a);
-    a.click();
-    window.URL.revokeObjectURL(url);
-    document.body.removeChild(a);
-  } catch (error: any) {
-    Message.error(error?.message || "导出公众号失败");
-  }
-};
-
-const importMPS = async () => {
-  try {
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = ".csv";
-    input.onchange = async (e) => {
-      const file = (e.target as HTMLInputElement).files?.[0];
-      if (!file) return;
-      const formData = new FormData();
-      formData.append("file", file);
-      const response = await ImportMPS(formData);
-      Message.info(response?.message || "导入成功");
-    };
-    input.click();
-  } catch (error) {
-    Message.error((error as any)?.message || "导入公众号失败");
-  }
 };
 
 const resetScrollPosition = () => {
