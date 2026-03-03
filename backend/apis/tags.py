@@ -9,11 +9,42 @@ from core.common.log import logger
 router = APIRouter(prefix="/tags", tags=["标签管理"])
 
 
-def _to_api_tag(tag: dict) -> dict:
+def _extract_feed_ids(raw_mps: object) -> list[str]:
+    import json
+
+    if raw_mps is None:
+        return []
+    payload = raw_mps
+    if isinstance(raw_mps, str):
+        text = raw_mps.strip()
+        if not text:
+            return []
+        try:
+            payload = json.loads(text)
+        except Exception:
+            return []
+    if not isinstance(payload, list):
+        return []
+    ids: list[str] = []
+    for item in payload:
+        if isinstance(item, dict):
+            v = item.get("id") or item.get("mp_id")
+            if v:
+                ids.append(str(v))
+        elif item:
+            ids.append(str(item))
+    return sorted(set(ids))
+
+
+def _to_api_tag(tag: dict, feed_ids: list[str] | None = None) -> dict:
+    import json
+
     item = dict(tag or {})
     item["intro"] = item.get("description") or ""
     item["cover"] = item.get("cover") or ""
     item["status"] = item.get("status", 1)
+    ids = feed_ids if feed_ids is not None else []
+    item["mps_id"] = json.dumps(ids, ensure_ascii=False)
     return item
 
 
@@ -27,10 +58,14 @@ async def get_tags(
     try:
         total = await tag_repo.count_tags()
         tags = await tag_repo.get_tags(limit=limit, offset=offset)
-        tags = [_to_api_tag(t) for t in tags]
+        tag_items = []
+        for t in tags:
+            tag_id = str((t or {}).get("id") or "")
+            feed_ids = await tag_repo.get_feed_ids_by_tag(tag_id) if tag_id else []
+            tag_items.append(_to_api_tag(t, feed_ids))
         return success_response(
             data={
-                "list": tags,
+                "list": tag_items,
                 "page": {"limit": limit, "offset": offset, "total": total},
                 "total": total,
             }
@@ -63,7 +98,14 @@ async def create_tag(
         }
 
         new_tag = await tag_repo.create_tag(tag_data)
-        return success_response(data=_to_api_tag(new_tag))
+        tag_id = str((new_tag or {}).get("id") or "")
+        feed_ids = _extract_feed_ids(tag.mps_id)
+        bound_rows = []
+        if tag_id:
+            bound_rows = await tag_repo.replace_feed_tags(tag_id, feed_ids)
+        data = _to_api_tag(new_tag, feed_ids)
+        data["bound_feed_count"] = len(bound_rows)
+        return success_response(data=data)
     except Exception as e:
         logger.error(e)
         raise HTTPException(
@@ -87,7 +129,8 @@ async def get_tag(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=error_response(code=404, message="Tag not found"),
         )
-    return success_response(data=_to_api_tag(tag))
+    feed_ids = await tag_repo.get_feed_ids_by_tag(tag_id)
+    return success_response(data=_to_api_tag(tag, feed_ids))
 
 
 @router.put(
@@ -121,8 +164,12 @@ async def update_tag(
         }
 
         updated_tags = await tag_repo.update_tag(tag_id, update_data)
+        feed_ids = _extract_feed_ids(tag_data.mps_id)
+        bound_rows = await tag_repo.replace_feed_tags(tag_id, feed_ids)
         if updated_tags:
-            return success_response(data=_to_api_tag(updated_tags[0]))
+            data = _to_api_tag(updated_tags[0], feed_ids)
+            data["bound_feed_count"] = len(bound_rows)
+            return success_response(data=data)
         else:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -130,6 +177,11 @@ async def update_tag(
             )
     except HTTPException:
         raise
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=error_response(code=400, message=str(e)),
+        )
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

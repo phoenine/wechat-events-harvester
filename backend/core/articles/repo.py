@@ -169,7 +169,6 @@ class ArticleRepository:
             return 0
 
         article_ids = [article["id"] for article in expired_articles]
-        await self.client.delete("article_tags", {"article_id": {"in": article_ids}})
         deleted_articles = await self.client.delete(
             self.ARTICLE_TABLE, {"id": {"in": article_ids}}
         )

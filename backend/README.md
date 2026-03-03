@@ -141,5 +141,7 @@ rg "APIRouter\\(|@router" apis
 
 - Playwright 与会话状态对抓取流程影响较大，建议在稳定网络和固定环境下运行。
 - 生产环境请显式配置 CORS 白名单、Supabase 凭据与通知 Webhook。
-- 若启用会话落库，请先创建 `sql/auth_sessions.sql` 对应表结构。
-- 若启用文章图片映射，请先创建 `sql/article_images.sql` 对应表结构。
+- 若启用会话落库，请先创建 `supabase/auth_sessions.sql` 对应表结构。
+- 若启用文章图片映射，请先创建 `supabase/migrations/article_images.sql` 对应表结构。
+- 标签采用一对多（`feeds.tag_id`）时，请先执行 `supabase/migrations/20260303_feeds_add_tag_id.sql`。
+- 若历史库仍存在 `article_tags` / `feed_tags`，可执行 `supabase/migrations/drop_article_tags.sql` 与 `supabase/migrations/drop_feed_tags.sql` 清理。

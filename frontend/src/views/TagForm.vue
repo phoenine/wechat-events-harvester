@@ -29,9 +29,25 @@ const fetchTag = async (id: string) => {
   try {
     loading.value = true
     const res = await getTag(id)
+    let selectedMps: any[] = []
+    try {
+      const raw = (res as any).mps_id
+      if (Array.isArray(raw)) {
+        selectedMps = raw
+      } else if (typeof raw === 'string' && raw.trim()) {
+        const parsed = JSON.parse(raw)
+        selectedMps = Array.isArray(parsed) ? parsed : []
+      }
+    } catch {
+      selectedMps = []
+    }
+    selectedMps = selectedMps.map((item: any) => {
+      if (item && typeof item === 'object') return item
+      return { id: String(item), mp_name: '', mp_cover: '' }
+    })
     formModel.value = {
       ...res,
-      mps_id: JSON.parse(res.mps_id||[]),
+      mps_id: selectedMps,
     }
      // 初始化选择器数据
     nextTick(() => {
