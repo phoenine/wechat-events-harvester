@@ -52,7 +52,7 @@ create table if not exists public.articles (
   title text not null,
   content text,
   content_md text,
-  cover_url text,
+  is_gathered boolean not null default false,
   publish_time bigint,
   url text,
   created_at timestamptz not null default now(),

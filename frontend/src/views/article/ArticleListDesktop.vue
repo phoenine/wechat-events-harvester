@@ -104,7 +104,7 @@
               <a-space-item v-if="!!activeMpId">
                 <a-button @click="refresh">
                   <template #icon><icon-refresh /></template>
-                  刷新
+                  抓取文章
                 </a-button>
               </a-space-item>
               <a-space-item v-else>
@@ -201,7 +201,7 @@
             </template>
           </a-table>
 
-          <a-modal v-model:visible="refreshModalVisible" title="刷新设置">
+          <a-modal v-model:visible="refreshModalVisible" title="抓取设置">
             <a-form :model="refreshForm" :rules="refreshRules">
               <a-form-item label="起始页" field="startPage">
                 <a-input-number v-model="refreshForm.startPage" :min="1" />
@@ -341,6 +341,22 @@ const formatPublishTime = (record: any) => {
   return formatDateTime(record?.publish_at);
 };
 
+const gatherDot = (record: any) => {
+  const gathered = record?.is_gathered === true;
+  return h("span", {
+    title: gathered ? "已采集" : "未采集",
+    style: {
+      display: "inline-block",
+      width: "8px",
+      height: "8px",
+      borderRadius: "50%",
+      marginRight: "8px",
+      verticalAlign: "middle",
+      backgroundColor: gathered ? "#A9AEB8" : "#F53F3F",
+    },
+  });
+};
+
 const columns = [
   {
     title: "文章标题",
@@ -348,16 +364,19 @@ const columns = [
     width: window.innerWidth - 1020,
     ellipsis: true,
     render: ({ record }) =>
-      h(
-        "a",
-        {
-          href: record.url || "#",
-          title: record.title,
-          target: "_blank",
-          style: { color: "var(--color-text-1)" },
-        },
-        record.title
-      ),
+      h("span", { style: { display: "inline-flex", alignItems: "center" } }, [
+        gatherDot(record),
+        h(
+          "a",
+          {
+            href: record.url || "#",
+            title: record.title,
+            target: "_blank",
+            style: { color: "var(--color-text-1)" },
+          },
+          record.title
+        ),
+      ]),
   },
   {
     title: "公众号",

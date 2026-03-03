@@ -29,7 +29,21 @@
                     <span class="time-part">{{ formatTime(item.created_at) }}</span>
                     <span class="date-part">{{ formatDate(item.created_at) }}</span>
                   </span>
-                  <a-typography-text strong :heading="1"><strong>{{ item.title }}</strong></a-typography-text>
+                  <a-typography-text strong :heading="1">
+                    <span
+                      :title="item.is_gathered === true ? '已采集' : '未采集'"
+                      :style="{
+                        display: 'inline-block',
+                        width: '8px',
+                        height: '8px',
+                        borderRadius: '50%',
+                        marginRight: '8px',
+                        verticalAlign: 'middle',
+                        backgroundColor: item.is_gathered === true ? '#A9AEB8' : '#F53F3F'
+                      }"
+                    />
+                    <strong>{{ item.title }}</strong>
+                  </a-typography-text>
                 </div>
                 <a-typography-text strong :heading="2" @click="viewArticle(item)">{{ item.mp_name || '未知公众号'
                   }}</a-typography-text>

@@ -17,7 +17,7 @@ ARTICLE_COLUMNS = {
     "title",
     "content",
     "content_md",
-    "cover_url",
+    "is_gathered",
     "publish_time",
     "url",
     "created_at",
@@ -163,10 +163,6 @@ def _normalize_article_for_db(article: dict) -> dict:
     """将采集侧字段归一化到 articles 表字段。"""
     data = dict(article or {})
 
-    # 兼容旧字段命名
-    if data.get("pic_url") and not data.get("cover_url"):
-        data["cover_url"] = data.get("pic_url")
-
     # 表外字段（采集上下文）不入库
     data.pop("description", None)
     data.pop("pic_url", None)
@@ -199,6 +195,8 @@ def UpdateArticle(art: dict, check_exist: bool = False):
     try:
         art, image_mappings = _upload_article_images(dict(art))
         art = _ensure_content_markdown(art)
+        # 业务语义：采集入库后默认未用于活动提取，统一为 false
+        art["is_gathered"] = False
         art = _normalize_article_for_db(art)
         # 使用 Supabase 创建文章
         result = article_repo.sync_create_article(art)
