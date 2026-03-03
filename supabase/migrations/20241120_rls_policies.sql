@@ -1,120 +1,239 @@
--- 启用RLS（行级安全）
-ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.feeds ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.articles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.tags ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.article_tags ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.message_tasks ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.message_task_logs ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.config_management ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.auth_sessions ENABLE ROW LEVEL SECURITY;
+-- RLS 基线策略（已与当前表结构对齐）
 
--- 用户资料表策略（profiles）
-CREATE POLICY "用户只能查看自己的资料" ON public.profiles
-    FOR SELECT USING (auth.uid() = user_id);
+alter table public.profiles enable row level security;
+alter table public.feeds enable row level security;
+alter table public.articles enable row level security;
+alter table public.article_images enable row level security;
+alter table public.tags enable row level security;
+alter table public.message_tasks enable row level security;
+alter table public.message_task_logs enable row level security;
+alter table public.config_managements enable row level security;
+alter table public.auth_sessions enable row level security;
+alter table public.auth_session_secret enable row level security;
 
-CREATE POLICY "用户可以更新自己的资料" ON public.profiles
-    FOR UPDATE USING (auth.uid() = user_id);
+-- profiles
+drop policy if exists "用户只能查看自己的资料" on public.profiles;
+create policy "用户只能查看自己的资料"
+on public.profiles for select
+to authenticated
+using (auth.uid() = user_id);
 
-CREATE POLICY "用户可以插入自己的资料" ON public.profiles
-    FOR INSERT WITH CHECK (auth.uid() = user_id);
+drop policy if exists "用户可以更新自己的资料" on public.profiles;
+create policy "用户可以更新自己的资料"
+on public.profiles for update
+to authenticated
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
 
--- 订阅源表策略 - 所有认证用户都可以查看和操作
-CREATE POLICY "认证用户可以查看订阅源" ON public.feeds
-    FOR SELECT USING (auth.role() = 'authenticated');
+drop policy if exists "用户可以插入自己的资料" on public.profiles;
+create policy "用户可以插入自己的资料"
+on public.profiles for insert
+to authenticated
+with check (auth.uid() = user_id);
 
-CREATE POLICY "认证用户可以创建订阅源" ON public.feeds
-    FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+-- feeds
+drop policy if exists "认证用户可以查看订阅源" on public.feeds;
+create policy "认证用户可以查看订阅源"
+on public.feeds for select
+to authenticated
+using (true);
 
-CREATE POLICY "认证用户可以更新订阅源" ON public.feeds
-    FOR UPDATE USING (auth.role() = 'authenticated');
+drop policy if exists "认证用户可以创建订阅源" on public.feeds;
+create policy "认证用户可以创建订阅源"
+on public.feeds for insert
+to authenticated
+with check (true);
 
-CREATE POLICY "认证用户可以删除订阅源" ON public.feeds
-    FOR DELETE USING (auth.role() = 'authenticated');
+drop policy if exists "认证用户可以更新订阅源" on public.feeds;
+create policy "认证用户可以更新订阅源"
+on public.feeds for update
+to authenticated
+using (true)
+with check (true);
 
--- 文章表策略 - 所有认证用户都可以查看和操作
-CREATE POLICY "认证用户可以查看文章" ON public.articles
-    FOR SELECT USING (auth.role() = 'authenticated');
+drop policy if exists "认证用户可以删除订阅源" on public.feeds;
+create policy "认证用户可以删除订阅源"
+on public.feeds for delete
+to authenticated
+using (true);
 
-CREATE POLICY "认证用户可以创建文章" ON public.articles
-    FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+-- articles
+drop policy if exists "认证用户可以查看文章" on public.articles;
+create policy "认证用户可以查看文章"
+on public.articles for select
+to authenticated
+using (true);
 
-CREATE POLICY "认证用户可以更新文章" ON public.articles
-    FOR UPDATE USING (auth.role() = 'authenticated');
+drop policy if exists "认证用户可以创建文章" on public.articles;
+create policy "认证用户可以创建文章"
+on public.articles for insert
+to authenticated
+with check (true);
 
-CREATE POLICY "认证用户可以删除文章" ON public.articles
-    FOR DELETE USING (auth.role() = 'authenticated');
+drop policy if exists "认证用户可以更新文章" on public.articles;
+create policy "认证用户可以更新文章"
+on public.articles for update
+to authenticated
+using (true)
+with check (true);
 
--- 标签表策略 - 所有认证用户都可以查看和操作
-CREATE POLICY "认证用户可以查看标签" ON public.tags
-    FOR SELECT USING (auth.role() = 'authenticated');
+drop policy if exists "认证用户可以删除文章" on public.articles;
+create policy "认证用户可以删除文章"
+on public.articles for delete
+to authenticated
+using (true);
 
-CREATE POLICY "认证用户可以创建标签" ON public.tags
-    FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+-- article_images
+drop policy if exists "认证用户可以查看文章图片映射" on public.article_images;
+create policy "认证用户可以查看文章图片映射"
+on public.article_images for select
+to authenticated
+using (true);
 
-CREATE POLICY "认证用户可以更新标签" ON public.tags
-    FOR UPDATE USING (auth.role() = 'authenticated');
+drop policy if exists "认证用户可以写入文章图片映射" on public.article_images;
+create policy "认证用户可以写入文章图片映射"
+on public.article_images for insert
+to authenticated
+with check (true);
 
-CREATE POLICY "认证用户可以删除标签" ON public.tags
-    FOR DELETE USING (auth.role() = 'authenticated');
+drop policy if exists "认证用户可以更新文章图片映射" on public.article_images;
+create policy "认证用户可以更新文章图片映射"
+on public.article_images for update
+to authenticated
+using (true)
+with check (true);
 
--- 文章标签关联表策略 - 所有认证用户都可以操作
-CREATE POLICY "认证用户可以查看文章标签关联" ON public.article_tags
-    FOR SELECT USING (auth.role() = 'authenticated');
+drop policy if exists "认证用户可以删除文章图片映射" on public.article_images;
+create policy "认证用户可以删除文章图片映射"
+on public.article_images for delete
+to authenticated
+using (true);
 
-CREATE POLICY "认证用户可以创建文章标签关联" ON public.article_tags
-    FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+-- tags
+drop policy if exists "认证用户可以查看标签" on public.tags;
+create policy "认证用户可以查看标签"
+on public.tags for select
+to authenticated
+using (true);
 
-CREATE POLICY "认证用户可以删除文章标签关联" ON public.article_tags
-    FOR DELETE USING (auth.role() = 'authenticated');
+drop policy if exists "认证用户可以创建标签" on public.tags;
+create policy "认证用户可以创建标签"
+on public.tags for insert
+to authenticated
+with check (true);
 
--- 消息任务表策略 - 所有认证用户都可以操作
-CREATE POLICY "认证用户可以查看消息任务" ON public.message_tasks
-    FOR SELECT USING (auth.role() = 'authenticated');
+drop policy if exists "认证用户可以更新标签" on public.tags;
+create policy "认证用户可以更新标签"
+on public.tags for update
+to authenticated
+using (true)
+with check (true);
 
-CREATE POLICY "认证用户可以创建消息任务" ON public.message_tasks
-    FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+drop policy if exists "认证用户可以删除标签" on public.tags;
+create policy "认证用户可以删除标签"
+on public.tags for delete
+to authenticated
+using (true);
 
-CREATE POLICY "认证用户可以更新消息任务" ON public.message_tasks
-    FOR UPDATE USING (auth.role() = 'authenticated');
+-- message_tasks
+drop policy if exists "认证用户可以查看消息任务" on public.message_tasks;
+create policy "认证用户可以查看消息任务"
+on public.message_tasks for select
+to authenticated
+using (true);
 
-CREATE POLICY "认证用户可以删除消息任务" ON public.message_tasks
-    FOR DELETE USING (auth.role() = 'authenticated');
+drop policy if exists "认证用户可以创建消息任务" on public.message_tasks;
+create policy "认证用户可以创建消息任务"
+on public.message_tasks for insert
+to authenticated
+with check (true);
 
--- 消息任务日志表策略 - 所有认证用户都可以查看
-CREATE POLICY "认证用户可以查看消息任务日志" ON public.message_task_logs
-    FOR SELECT USING (auth.role() = 'authenticated');
+drop policy if exists "认证用户可以更新消息任务" on public.message_tasks;
+create policy "认证用户可以更新消息任务"
+on public.message_tasks for update
+to authenticated
+using (true)
+with check (true);
 
-CREATE POLICY "认证用户可以创建消息任务日志" ON public.message_task_logs
-    FOR INSERT WITH CHECK (auth.role() = 'authenticated');
+drop policy if exists "认证用户可以删除消息任务" on public.message_tasks;
+create policy "认证用户可以删除消息任务"
+on public.message_tasks for delete
+to authenticated
+using (true);
 
--- 配置表策略 - 所有认证用户都可以查看，但只有服务角色可以修改
-CREATE POLICY "认证用户可以查看配置" ON public.config_management
-    FOR SELECT USING (auth.role() = 'authenticated');
+-- message_task_logs
+drop policy if exists "认证用户可以查看消息任务日志" on public.message_task_logs;
+create policy "认证用户可以查看消息任务日志"
+on public.message_task_logs for select
+to authenticated
+using (true);
 
-CREATE POLICY "服务角色可以管理配置" ON public.config_management
-    FOR ALL USING (auth.jwt() ->> 'role' = 'service_role');
+drop policy if exists "认证用户可以创建消息任务日志" on public.message_task_logs;
+create policy "认证用户可以创建消息任务日志"
+on public.message_task_logs for insert
+to authenticated
+with check (true);
 
--- 认证会话表策略 - 用户只能查看自己的会话
-CREATE POLICY "用户可以查看自己的认证会话" ON public.auth_sessions
-    FOR SELECT USING (auth.uid() = user_id);
+-- config_managements
+drop policy if exists "认证用户可以查看配置" on public.config_managements;
+create policy "认证用户可以查看配置"
+on public.config_managements for select
+to authenticated
+using (true);
 
-CREATE POLICY "用户可以创建认证会话" ON public.auth_sessions
-    FOR INSERT WITH CHECK (auth.uid() = user_id);
+drop policy if exists "服务角色可以管理配置" on public.config_managements;
+create policy "服务角色可以管理配置"
+on public.config_managements for all
+to service_role
+using (true)
+with check (true);
 
-CREATE POLICY "用户可以更新自己的认证会话" ON public.auth_sessions
-    FOR UPDATE USING (auth.uid() = user_id);
+-- auth_sessions
+drop policy if exists "用户可以查看自己的认证会话" on public.auth_sessions;
+create policy "用户可以查看自己的认证会话"
+on public.auth_sessions for select
+to authenticated
+using (auth.uid() = user_id);
 
-CREATE POLICY "用户可以删除自己的认证会话" ON public.auth_sessions
-    FOR DELETE USING (auth.uid() = user_id);
+drop policy if exists "用户可以创建认证会话" on public.auth_sessions;
+create policy "用户可以创建认证会话"
+on public.auth_sessions for insert
+to authenticated
+with check (auth.uid() = user_id);
 
+drop policy if exists "用户可以更新自己的认证会话" on public.auth_sessions;
+create policy "用户可以更新自己的认证会话"
+on public.auth_sessions for update
+to authenticated
+using (auth.uid() = user_id)
+with check (auth.uid() = user_id);
 
--- 授权基本权限
-GRANT USAGE ON SCHEMA public TO anon, authenticated;
-GRANT ALL ON ALL TABLES IN SCHEMA public TO authenticated;
-GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO authenticated;
-GRANT SELECT ON ALL TABLES IN SCHEMA public TO anon;
-GRANT SELECT ON ALL SEQUENCES IN SCHEMA public TO anon;
+drop policy if exists "用户可以删除自己的认证会话" on public.auth_sessions;
+create policy "用户可以删除自己的认证会话"
+on public.auth_sessions for delete
+to authenticated
+using (auth.uid() = user_id);
 
--- 授权特定表的插入权限给匿名用户（用于注册）
-GRANT INSERT ON public.profiles TO anon;
+-- auth_session_secret（仅 service role）
+drop policy if exists "secret_service_only_select" on public.auth_session_secret;
+create policy "secret_service_only_select"
+on public.auth_session_secret for select
+to service_role
+using (true);
+
+drop policy if exists "secret_service_only_mod" on public.auth_session_secret;
+create policy "secret_service_only_mod"
+on public.auth_session_secret for all
+to service_role
+using (true)
+with check (true);
+
+-- 基本权限
+grant usage on schema public to anon, authenticated;
+grant all on all tables in schema public to authenticated;
+grant all on all sequences in schema public to authenticated;
+grant select on all tables in schema public to anon;
+grant select on all sequences in schema public to anon;
+
+-- 匿名注册场景允许插入 profiles
+grant insert on public.profiles to anon;
